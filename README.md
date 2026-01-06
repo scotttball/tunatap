@@ -78,28 +78,46 @@ SSH tunnel manager for OCI Bastion services. Simplifies connecting to private OK
 
 ## Installation
 
-### From Source
+### Go Install (Recommended)
+
+If you have Go 1.21+ installed:
+
+```bash
+go install github.com/scotttball/tunatap@latest
+```
+
+### Download Binary
+
+Download pre-built binaries from the [Releases](https://github.com/scotttball/tunatap/releases) page.
+
+**Linux/macOS:**
+```bash
+# Set version (check releases page for latest)
+VERSION="2026.01.1"
+
+# Download for your platform (linux_amd64, linux_arm64, darwin_amd64, darwin_arm64)
+curl -LO "https://github.com/scotttball/tunatap/releases/download/${VERSION}/tunatap_${VERSION}_linux_amd64.tar.gz"
+tar xzf tunatap_${VERSION}_linux_amd64.tar.gz
+sudo mv tunatap /usr/local/bin/
+
+# Verify installation
+tunatap version
+```
+
+**Windows:**
+1. Download the `.zip` file from Releases
+2. Extract `tunatap.exe`
+3. Add to your PATH or move to a directory in your PATH
+
+### Build from Source
 
 ```bash
 git clone https://github.com/scotttball/tunatap.git
 cd tunatap
 go build -o tunatap .
-```
 
-### Cross-Platform Builds
-
-```bash
-# Linux
-GOOS=linux GOARCH=amd64 go build -o tunatap-linux .
-
-# macOS (Intel)
-GOOS=darwin GOARCH=amd64 go build -o tunatap-darwin .
-
-# macOS (Apple Silicon)
-GOOS=darwin GOARCH=arm64 go build -o tunatap-darwin-arm64 .
-
-# Windows
-GOOS=windows GOARCH=amd64 go build -o tunatap.exe .
+# Optional: Install to GOPATH/bin
+go install .
 ```
 
 ## Prerequisites
@@ -366,11 +384,18 @@ This versioning scheme makes it easy to understand when a release was made.
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+3. Make your changes and ensure tests pass (`go test -race ./...`)
+4. Commit your changes (`git commit -m 'Add amazing feature'`)
+5. Push to the branch (`git push origin feature/amazing-feature`)
+6. Open a Pull Request
 
-To trigger a release, include `[release]` in your commit message when merging to main.
+**Note:** All changes require a Pull Request - direct pushes to main are not allowed.
+
+### Releasing
+
+Releases are automated via GitHub Actions using [Calendar Versioning](https://calver.org/). To trigger a release:
+- Include `[release]` in your PR title or commit message when merging to main
+- Or manually trigger the Release workflow from the Actions tab
 
 ## License
 

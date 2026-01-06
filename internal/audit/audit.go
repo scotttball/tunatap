@@ -239,13 +239,31 @@ func generateSessionID() string {
 	return fmt.Sprintf("%d-%d", time.Now().UnixNano(), os.Getpid())
 }
 
-// DefaultLogDir returns the default audit log directory.
+// DefaultLogDir returns the audit log directory, respecting configured home path.
 func DefaultLogDir() string {
+	// Check if a custom home path is configured via state
+	if homePath := getConfiguredHomePath(); homePath != "" {
+		return filepath.Join(homePath, "audit")
+	}
+	// Fall back to default ~/.tunatap/audit
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "/tmp/tunatap/audit"
 	}
 	return filepath.Join(home, ".tunatap", "audit")
+}
+
+// getConfiguredHomePath returns the configured tunatap home path if set.
+// This avoids import cycles by using a package-level variable that can be set.
+var configuredHomePath string
+
+// SetHomePath allows setting the audit log home path from external packages.
+func SetHomePath(path string) {
+	configuredHomePath = path
+}
+
+func getConfiguredHomePath() string {
+	return configuredHomePath
 }
 
 // Query represents criteria for querying audit logs.

@@ -8,12 +8,22 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"github.com/scotttball/tunatap/internal/audit"
 	"github.com/scotttball/tunatap/internal/client"
 	"github.com/scotttball/tunatap/internal/config"
+	"github.com/scotttball/tunatap/internal/health"
 	"github.com/scotttball/tunatap/internal/tunnel"
 	"github.com/scotttball/tunatap/pkg/utils"
 	"golang.org/x/crypto/ssh"
 )
+
+// TunnelOptions configures optional features for the tunnel.
+type TunnelOptions struct {
+	// AuditLogger logs tunnel connect/disconnect events
+	AuditLogger *audit.Logger
+	// OnReady is called when the tunnel is ready with the actual port
+	OnReady ReadyCallback
+}
 
 // bastionBackoffConfig returns the backoff configuration for bastion retries.
 func bastionBackoffConfig() *utils.BackoffConfig {
@@ -31,11 +41,20 @@ type ReadyCallback func(port int)
 
 // TunnelThroughBastion establishes an SSH tunnel through a bastion service.
 func TunnelThroughBastion(ctx context.Context, ociClient *client.OCIClient, cfg *config.Config, cluster *config.Cluster, endpoint *config.ClusterEndpoint) error {
-	return TunnelThroughBastionWithCallback(ctx, ociClient, cfg, cluster, endpoint, nil)
+	return TunnelThroughBastionWithOptions(ctx, ociClient, cfg, cluster, endpoint, nil)
 }
 
 // TunnelThroughBastionWithCallback establishes an SSH tunnel and calls the callback when ready.
 func TunnelThroughBastionWithCallback(ctx context.Context, ociClient *client.OCIClient, cfg *config.Config, cluster *config.Cluster, endpoint *config.ClusterEndpoint, onReady ReadyCallback) error {
+	return TunnelThroughBastionWithOptions(ctx, ociClient, cfg, cluster, endpoint, &TunnelOptions{OnReady: onReady})
+}
+
+// TunnelThroughBastionWithOptions establishes an SSH tunnel with full options.
+func TunnelThroughBastionWithOptions(ctx context.Context, ociClient *client.OCIClient, cfg *config.Config, cluster *config.Cluster, endpoint *config.ClusterEndpoint, opts *TunnelOptions) error {
+	if opts == nil {
+		opts = &TunnelOptions{}
+	}
+
 	backoff := utils.NewBackoff(bastionBackoffConfig())
 
 	// Default bastion type to STANDARD if not set
@@ -44,25 +63,82 @@ func TunnelThroughBastionWithCallback(ctx context.Context, ociClient *client.OCI
 		bastionType = *cluster.BastionType
 	}
 
+	// Generate a session ID for audit/health tracking
+	sessionID := fmt.Sprintf("%d-%d", time.Now().UnixNano(), os.Getpid())
+
+	// Prepare audit session info (but don't start until tunnel is up)
+	bastionID := ""
+	if cluster.BastionId != nil {
+		bastionID = *cluster.BastionId
+	}
+	auditSession := &audit.Session{
+		ID:          sessionID,
+		ClusterName: cluster.ClusterName,
+		Region:      cluster.Region,
+		LocalPort:   *cluster.LocalPort,
+		RemoteHost:  endpoint.Ip,
+		RemotePort:  endpoint.Port,
+		BastionID:   bastionID,
+	}
+
+	// Register with health registry (starts unhealthy)
+	healthRegistry := health.GetRegistry()
+	tunnelStatus := &health.TunnelStatus{
+		ID:         sessionID,
+		Cluster:    cluster.ClusterName,
+		Region:     cluster.Region,
+		LocalPort:  *cluster.LocalPort,
+		RemoteHost: endpoint.Ip,
+		RemotePort: endpoint.Port,
+		Healthy:    false, // Will be set to true once tunnel is ready
+	}
+	healthRegistry.Register(tunnelStatus)
+
+	// Track whether tunnel was ever healthy (for audit logging)
+	var tunnelWasHealthy bool
+	var lastError error
+
+	// Ensure cleanup on exit
+	defer func() {
+		healthRegistry.Deregister(sessionID)
+		// Only log audit disconnect if tunnel was ever connected
+		if opts.AuditLogger != nil && tunnelWasHealthy {
+			errMsg := ""
+			if lastError != nil {
+				errMsg = lastError.Error()
+			}
+			if err := opts.AuditLogger.EndSession(sessionID, errMsg); err != nil {
+				log.Warn().Err(err).Msg("Failed to end audit session")
+			}
+		}
+	}()
+
 	for {
 		log.Debug().Msgf("Connection attempt %d", backoff.Attempt()+1)
 
 		var err error
 		if bastionType == "INTERNAL" {
-			err = handleInternalBastionWithCallback(ctx, cluster, endpoint, onReady)
+			err = handleInternalBastionWithOptions(ctx, cluster, endpoint, sessionID, opts, healthRegistry, auditSession, &tunnelWasHealthy)
 		} else {
-			err = handleStandardBastionWithCallback(ctx, ociClient, cfg, cluster, endpoint, onReady)
+			err = handleStandardBastionWithOptions(ctx, ociClient, cfg, cluster, endpoint, sessionID, opts, healthRegistry, auditSession, &tunnelWasHealthy)
 		}
 
 		if err == nil {
 			return nil
 		}
 
+		// Track the error for audit logging
+		lastError = err
+
+		// Update health status on error
+		healthRegistry.UpdateHealth(sessionID, false, err.Error())
+
 		log.Error().Err(err).Msgf("%s bastion tunnel failed", bastionType)
 
 		// Check for context cancellation before sleeping
 		select {
 		case <-ctx.Done():
+			lastError = ctx.Err()
 			return ctx.Err()
 		default:
 		}
@@ -70,7 +146,8 @@ func TunnelThroughBastionWithCallback(ctx context.Context, ociClient *client.OCI
 		// Get next backoff duration
 		duration, shouldRetry := backoff.Next()
 		if !shouldRetry {
-			return fmt.Errorf("max retry attempts (%d) exceeded: %w", backoff.Attempt(), err)
+			lastError = fmt.Errorf("max retry attempts (%d) exceeded: %w", backoff.Attempt(), err)
+			return lastError
 		}
 
 		log.Info().Msgf("Retrying in %s (attempt %d/%d)",
@@ -81,14 +158,15 @@ func TunnelThroughBastionWithCallback(ctx context.Context, ociClient *client.OCI
 		// Sleep with context awareness
 		select {
 		case <-ctx.Done():
+			lastError = ctx.Err()
 			return ctx.Err()
 		case <-time.After(duration):
 		}
 	}
 }
 
-// handleInternalBastionWithCallback handles tunneling through an internal bastion with a ready callback.
-func handleInternalBastionWithCallback(ctx context.Context, cluster *config.Cluster, endpoint *config.ClusterEndpoint, onReady ReadyCallback) error {
+// handleInternalBastionWithOptions handles tunneling through an internal bastion with full options.
+func handleInternalBastionWithOptions(ctx context.Context, cluster *config.Cluster, endpoint *config.ClusterEndpoint, sessionID string, opts *TunnelOptions, healthRegistry *health.Registry, auditSession *audit.Session, tunnelWasHealthy *bool) error {
 	log.Info().Msg("Using internal bastion service")
 
 	if cluster.JumpBoxIP == nil {
@@ -110,9 +188,16 @@ func handleInternalBastionWithCallback(ctx context.Context, cluster *config.Clus
 
 	log.Info().Msgf("Creating ssh tunnel. The equivalent ssh command is:\n%s\nYou can now use kubectl in another terminal", sshCmd)
 
-	// Call ready callback with the port
-	if onReady != nil {
-		onReady(*cluster.LocalPort)
+	// Mark tunnel as healthy, start audit session, and call ready callback
+	healthRegistry.UpdateHealth(sessionID, true, "")
+	*tunnelWasHealthy = true
+	if opts.AuditLogger != nil {
+		if err := opts.AuditLogger.StartSession(auditSession); err != nil {
+			log.Warn().Err(err).Msg("Failed to start audit session")
+		}
+	}
+	if opts.OnReady != nil {
+		opts.OnReady(*cluster.LocalPort)
 	}
 
 	cmd := exec.CommandContext(ctx, "sh", "-c", sshCmd)
@@ -122,25 +207,25 @@ func handleInternalBastionWithCallback(ctx context.Context, cluster *config.Clus
 	return cmd.Run()
 }
 
-// handleStandardBastionWithCallback handles tunneling through a standard bastion service with a ready callback.
-func handleStandardBastionWithCallback(ctx context.Context, ociClient *client.OCIClient, cfg *config.Config, cluster *config.Cluster, endpoint *config.ClusterEndpoint, onReady ReadyCallback) error {
-	var sessionID string
+// handleStandardBastionWithOptions handles tunneling through a standard bastion service with full options.
+func handleStandardBastionWithOptions(ctx context.Context, ociClient *client.OCIClient, cfg *config.Config, cluster *config.Cluster, endpoint *config.ClusterEndpoint, auditSessionID string, opts *TunnelOptions, healthRegistry *health.Registry, auditSession *audit.Session, tunnelWasHealthy *bool) error {
+	var bastionSessionID string
 	var sshConfig ssh.ClientConfig
 
 	log.Info().Msg("Getting bastion session...")
-	err := UpdateBastionConnection(ctx, &sessionID, &sshConfig, ociClient, cfg, cluster, endpoint)
+	err := UpdateBastionConnection(ctx, &bastionSessionID, &sshConfig, ociClient, cfg, cluster, endpoint)
 	if err != nil {
 		return fmt.Errorf("failed to get session from Bastion: %w", err)
 	}
 
-	log.Info().Msgf("Using session: %s", sessionID)
+	log.Info().Msgf("Using session: %s", bastionSessionID)
 
 	sshCmd := GetTunnelCommand(
 		cfg.SshPrivateKeyFile,
 		*cluster.LocalPort,
 		endpoint.Port,
 		endpoint.Ip,
-		sessionID,
+		bastionSessionID,
 		cluster.Region,
 		cfg.SshSocksProxy,
 	)
@@ -158,8 +243,11 @@ func handleStandardBastionWithCallback(ctx context.Context, ociClient *client.OC
 				return
 			case <-ticker.C:
 				log.Debug().Msg("Periodic update check of bastion session...")
-				if err := UpdateBastionConnection(ctx, &sessionID, &sshConfig, ociClient, cfg, cluster, endpoint); err != nil {
+				if err := UpdateBastionConnection(ctx, &bastionSessionID, &sshConfig, ociClient, cfg, cluster, endpoint); err != nil {
 					log.Error().Err(err).Msg("Failed to update bastion connection")
+				} else if opts.AuditLogger != nil {
+					// Log session refresh event (ignore errors as this is non-critical)
+					_ = opts.AuditLogger.LogSessionRefresh(auditSessionID, bastionSessionID)
 				}
 			}
 		}
@@ -187,9 +275,16 @@ func handleStandardBastionWithCallback(ctx context.Context, ociClient *client.OC
 	// Wait for tunnel to be ready
 	select {
 	case <-tun.Ready:
-		// Tunnel is ready, call callback with actual port
-		if onReady != nil {
-			onReady(tun.GetActualLocalPort())
+		// Tunnel is ready - mark healthy, start audit session, call callback
+		healthRegistry.UpdateHealth(auditSessionID, true, "")
+		*tunnelWasHealthy = true
+		if opts.AuditLogger != nil {
+			if err := opts.AuditLogger.StartSession(auditSession); err != nil {
+				log.Warn().Err(err).Msg("Failed to start audit session")
+			}
+		}
+		if opts.OnReady != nil {
+			opts.OnReady(tun.GetActualLocalPort())
 		}
 	case err := <-errCh:
 		return err

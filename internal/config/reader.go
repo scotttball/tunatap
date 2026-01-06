@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/rs/zerolog/log"
+	"github.com/scotttball/tunatap/pkg/utils"
 	"gopkg.in/yaml.v3"
 )
 
@@ -52,6 +53,12 @@ func ReadConfig(path string) (*Config, error) {
 	if config.SshConnectionMaxConcurrentUse == nil {
 		maxConcurrent := 10
 		config.SshConnectionMaxConcurrentUse = &maxConcurrent
+	}
+
+	// Default SSH private key to ~/.ssh/id_rsa if not set
+	if config.SshPrivateKeyFile == "" {
+		config.SshPrivateKeyFile = utils.DefaultSSHPrivateKey()
+		log.Debug().Msgf("Using default SSH key: %s", config.SshPrivateKeyFile)
 	}
 
 	return config, nil

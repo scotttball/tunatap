@@ -41,10 +41,16 @@ func TunnelThroughBastion(ctx context.Context, ociClient *client.OCIClient, cfg 
 func TunnelThroughBastionWithCallback(ctx context.Context, ociClient *client.OCIClient, cfg *config.Config, cluster *config.Cluster, endpoint *config.ClusterEndpoint, onReady ReadyCallback) error {
 	retry := maxRetries
 
+	// Default bastion type to STANDARD if not set
+	bastionType := "STANDARD"
+	if cluster.BastionType != nil {
+		bastionType = *cluster.BastionType
+	}
+
 	for retry > 0 {
 		log.Debug().Msgf("Retries left: %d", retry)
 
-		if *cluster.BastionType == "INTERNAL" {
+		if bastionType == "INTERNAL" {
 			err := handleInternalBastionWithCallback(ctx, cluster, endpoint, onReady)
 			if err != nil {
 				log.Error().Err(err).Msg("Internal bastion tunnel failed")

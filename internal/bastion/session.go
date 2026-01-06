@@ -39,9 +39,20 @@ type SessionManager struct {
 }
 
 // NewSessionManager creates a new session manager.
+// By default, ephemeral in-memory SSH keys are used for enhanced security.
+// Traditional key files are only used when explicitly configured via ssh_private_key_file.
 func NewSessionManager(ociClient *client.OCIClient, cfg *config.Config) *SessionManager {
-	// Use ephemeral keys if no SSH key file is configured or if explicitly enabled
+	// Ephemeral keys are the secure default - used when:
+	// 1. No SSH key file is configured (default), OR
+	// 2. use_ephemeral_keys is explicitly set to true
 	useEphemeral := cfg.SshPrivateKeyFile == "" || cfg.UseEphemeralKeys
+
+	if useEphemeral {
+		log.Debug().Msg("Session manager will use ephemeral SSH keys (secure default)")
+	} else {
+		log.Debug().Msgf("Session manager will use SSH key file: %s", cfg.SshPrivateKeyFile)
+	}
+
 	return &SessionManager{
 		ociClient:        ociClient,
 		config:           cfg,
@@ -380,6 +391,7 @@ func (m *SessionManager) getPublicKey() (string, error) {
 
 // UpdateBastionConnection updates session and SSH config for a connection.
 func UpdateBastionConnection(
+	ctx context.Context,
 	sessionID *string,
 	sshConfig *ssh.ClientConfig,
 	ociClient *client.OCIClient,
@@ -387,12 +399,13 @@ func UpdateBastionConnection(
 	cluster *config.Cluster,
 	endpoint *config.ClusterEndpoint,
 ) error {
-	return UpdateBastionConnectionWithManager(sessionID, sshConfig, nil, ociClient, cfg, cluster, endpoint)
+	return UpdateBastionConnectionWithManager(ctx, sessionID, sshConfig, nil, ociClient, cfg, cluster, endpoint)
 }
 
 // UpdateBastionConnectionWithManager updates session and SSH config using a provided session manager.
 // If manager is nil, a new one is created.
 func UpdateBastionConnectionWithManager(
+	ctx context.Context,
 	sessionID *string,
 	sshConfig *ssh.ClientConfig,
 	manager *SessionManager,
@@ -401,8 +414,6 @@ func UpdateBastionConnectionWithManager(
 	cluster *config.Cluster,
 	endpoint *config.ClusterEndpoint,
 ) error {
-	ctx := context.Background()
-
 	if manager == nil {
 		manager = NewSessionManager(ociClient, cfg)
 	}

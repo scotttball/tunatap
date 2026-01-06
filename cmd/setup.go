@@ -97,18 +97,53 @@ func promptForCluster(reader *bufio.Reader) (*config.Cluster, error) {
 		return nil, fmt.Errorf("cluster name is required")
 	}
 
-	fmt.Print("OCI Region (e.g., us-ashburn-1): ")
-	region, _ := reader.ReadString('\n')
-	cluster.Region = strings.TrimSpace(region)
-	if cluster.Region == "" {
-		return nil, fmt.Errorf("region is required")
-	}
-
 	fmt.Print("Cluster OCID (leave empty to lookup by name): ")
 	ocid, _ := reader.ReadString('\n')
 	ocid = strings.TrimSpace(ocid)
+
+	// If OCID provided, extract and validate region from it
+	var detectedRegion string
 	if ocid != "" {
 		cluster.Ocid = &ocid
+
+		// Validate OCID format and extract region
+		if !utils.IsClusterOCID(ocid) {
+			fmt.Printf("  Warning: OCID doesn't appear to be a cluster OCID\n")
+		}
+
+		detectedRegion = utils.ExtractRegionFromOCID(ocid)
+		if detectedRegion != "" {
+			fmt.Printf("  Detected region from OCID: %s\n", detectedRegion)
+		}
+	}
+
+	// Ask for region, with default from OCID if detected
+	if detectedRegion != "" {
+		fmt.Printf("OCI Region [%s]: ", detectedRegion)
+	} else {
+		fmt.Print("OCI Region (e.g., us-ashburn-1): ")
+	}
+	region, _ := reader.ReadString('\n')
+	region = strings.TrimSpace(region)
+
+	if region == "" && detectedRegion != "" {
+		region = detectedRegion
+	}
+	if region == "" {
+		return nil, fmt.Errorf("region is required")
+	}
+	cluster.Region = region
+
+	// Warn if region doesn't match OCID
+	if detectedRegion != "" && region != detectedRegion {
+		fmt.Printf("  Warning: Entered region '%s' differs from OCID region '%s'\n", region, detectedRegion)
+		fmt.Printf("  This may cause API errors. Are you sure? [y/N]: ")
+		confirm, _ := reader.ReadString('\n')
+		confirm = strings.TrimSpace(strings.ToLower(confirm))
+		if confirm != "y" && confirm != "yes" {
+			cluster.Region = detectedRegion
+			fmt.Printf("  Using region from OCID: %s\n", detectedRegion)
+		}
 	}
 
 	if cluster.Ocid == nil {
@@ -144,10 +179,26 @@ func promptForCluster(reader *bufio.Reader) (*config.Cluster, error) {
 	cluster.LocalPort = &port
 
 	// Add at least one endpoint
-	fmt.Print("\nAdd cluster endpoint IP: ")
-	ip, _ := reader.ReadString('\n')
-	ip = strings.TrimSpace(ip)
-	if ip != "" {
+	for {
+		fmt.Print("\nCluster endpoint IP (required): ")
+		ip, _ := reader.ReadString('\n')
+		ip = strings.TrimSpace(ip)
+
+		if ip == "" {
+			if cluster.Ocid != nil {
+				fmt.Println("  Note: Endpoint IP can be discovered from cluster OCID during connect.")
+				fmt.Print("  Skip endpoint configuration? [y/N]: ")
+				skip, _ := reader.ReadString('\n')
+				skip = strings.TrimSpace(strings.ToLower(skip))
+				if skip == "y" || skip == "yes" {
+					break
+				}
+			} else {
+				fmt.Println("  Error: Endpoint IP is required when no cluster OCID is provided.")
+			}
+			continue
+		}
+
 		fmt.Print("Endpoint port [6443]: ")
 		epPortStr, _ := reader.ReadString('\n')
 		epPortStr = strings.TrimSpace(epPortStr)
@@ -161,6 +212,7 @@ func promptForCluster(reader *bufio.Reader) (*config.Cluster, error) {
 			Ip:   ip,
 			Port: epPort,
 		})
+		break
 	}
 
 	return cluster, nil

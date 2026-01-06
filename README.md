@@ -31,8 +31,11 @@ SSH tunnel manager for OCI Bastion services. Simplifies connecting to private OK
 - **Exec Pattern**: Run commands with tunnel and kubeconfig automatically configured
 - **Remote Config**: Load shared cluster catalogs from OCI Object Storage
 - **Health Monitoring**: Automatic connection health checks with keepalive probes
+- **Health Endpoint**: Optional HTTP server for Kubernetes probes and Prometheus metrics
 - **Session Management**: Automatic bastion session refresh before expiration
 - **Preflight Checks**: Built-in diagnostics for troubleshooting connectivity
+- **Status & Logs**: Real-time tunnel status and activity log streaming
+- **Resilient Retries**: Exponential backoff with jitter for robust connections
 
 ## How It Works
 
@@ -215,6 +218,7 @@ clusters:
 | `cache_ttl_hours` | Discovery cache time-to-live in hours | `24` |
 | `skip_discovery` | Disable automatic cluster discovery | `false` |
 | `discovery_regions` | Regions to search during discovery (empty = all subscribed) | `[]` |
+| `health_endpoint` | Address for health HTTP server (e.g., `localhost:9090`) | - |
 
 ## Commands
 
@@ -327,6 +331,28 @@ Audit configuration and access patterns.
 tunatap audit           # Run configuration audit
 ```
 
+### status
+
+Show active tunnel status.
+
+```bash
+tunatap status          # Show active tunnels
+tunatap status --json   # Output as JSON
+tunatap status -v       # Verbose output with session details
+```
+
+### logs
+
+View tunnel activity logs.
+
+```bash
+tunatap logs            # Show recent activity (last 20 entries)
+tunatap logs -f         # Follow/stream new log entries (like tail -f)
+tunatap logs -n 50      # Show last 50 entries
+tunatap logs -c prod    # Filter by cluster name
+tunatap logs --json     # Output raw JSON entries
+```
+
 ### version
 
 Print version information.
@@ -353,6 +379,34 @@ kubectl --server=https://localhost:6443 get nodes
 
 # Or configure your kubeconfig to use the tunnel
 kubectl config set-cluster my-cluster --server=https://localhost:6443
+```
+
+## Health Endpoint
+
+When configured, tunatap exposes HTTP endpoints for monitoring:
+
+```yaml
+# In ~/.tunatap/config.yaml
+health_endpoint: "localhost:9090"
+```
+
+Available endpoints:
+
+| Endpoint | Description |
+|----------|-------------|
+| `/health` | JSON status of all tunnels with details |
+| `/healthz` | Simple `ok` for Kubernetes liveness probes |
+| `/readyz` | Returns `ok` when healthy tunnels exist (readiness) |
+| `/metrics` | Prometheus-format metrics |
+
+Example metrics:
+```
+tunatap_up 1
+tunatap_uptime_seconds 3600
+tunatap_tunnels_total 2
+tunatap_tunnel_healthy{cluster="prod",local_port="6443"} 1
+tunatap_pool_size{cluster="prod",local_port="6443"} 5
+tunatap_pool_active_uses{cluster="prod",local_port="6443"} 2
 ```
 
 ## Troubleshooting

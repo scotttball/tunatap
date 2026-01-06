@@ -9,6 +9,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"github.com/scotttball/tunatap/internal/pool"
+	"github.com/scotttball/tunatap/pkg/utils"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/net/proxy"
 )
@@ -169,7 +170,26 @@ func (tunnel *SSHTunnel) Start() error {
 	log.Info().Msgf("Tunnel ready. Listening on localhost:%d, forwarding to %s via %s",
 		tunnel.ActualLocalPort, tunnel.Remote.String(), tunnel.Server.String())
 
+	// Create connection channel once outside the loop to avoid goroutine leaks
+	localConnections := make(chan net.Conn, 100)
+
+	// Single worker goroutine to process incoming connections
+	go func() {
+		for localConn := range localConnections {
+			go tunnel.forward(ctx, localConn, connPool, errors)
+		}
+	}()
+
+	// Ensure channel is closed when we exit
+	defer close(localConnections)
+
+	// Accept backoff configuration for handling listener errors
+	acceptBackoff := utils.AggressiveBackoffConfig()
+	acceptFailCount := 0
+	const maxAcceptFailures = 10
+
 	for {
+		// Non-blocking check for errors from forwarders
 		select {
 		case err := <-errors:
 			log.Error().Err(err).Msg("received error from forwarder")
@@ -181,19 +201,49 @@ func (tunnel *SSHTunnel) Start() error {
 		default:
 		}
 
-		localConnections := make(chan net.Conn, 100)
-
-		go func() {
-			for localConn := range localConnections {
-				go tunnel.forward(ctx, localConn, connPool, errors)
-			}
-		}()
-
 		localConn, err := listener.Accept()
 		if err != nil {
-			errors <- fmt.Errorf("listener.Accept() error: %w", err)
+			// Check if this is a shutdown (listener closed)
+			select {
+			case <-ctx.Done():
+				log.Debug().Msg("Accept loop exiting due to context cancellation")
+				cancel()
+				return nil
+			default:
+			}
+
+			// Check if listener was closed externally
+			if opErr, ok := err.(*net.OpError); ok && opErr.Err.Error() == "use of closed network connection" {
+				log.Debug().Msg("Listener closed, shutting down accept loop")
+				cancel()
+				return nil
+			}
+
+			// Track consecutive accept failures and apply backoff
+			acceptFailCount++
+			log.Error().Err(err).Msgf("listener.Accept() error (failure %d)", acceptFailCount)
+
+			if acceptFailCount >= maxAcceptFailures {
+				log.Error().Msgf("Too many consecutive accept failures (%d), shutting down", acceptFailCount)
+				cancel()
+				return fmt.Errorf("listener accept failed %d times consecutively", acceptFailCount)
+			}
+
+			// Apply backoff before next accept attempt
+			backoffDuration := acceptBackoff.CalculateBackoff(acceptFailCount - 1)
+			log.Warn().Msgf("Backing off for %s before next accept attempt", backoffDuration.Round(time.Millisecond))
+
+			select {
+			case <-ctx.Done():
+				cancel()
+				return ctx.Err()
+			case <-time.After(backoffDuration):
+			}
 			continue
 		}
+
+		// Reset accept failure count on successful accept
+		acceptFailCount = 0
 
 		select {
 		case localConnections <- localConn:

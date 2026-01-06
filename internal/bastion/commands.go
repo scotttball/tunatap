@@ -6,13 +6,32 @@ import (
 	"strings"
 )
 
+// extractRealmFromOCID safely extracts the realm (e.g., "oc1", "oc2") from an OCID.
+// Returns "oc1" as default if the OCID format is invalid.
+func extractRealmFromOCID(ocid string) string {
+	parts := strings.Split(ocid, ".")
+	if len(parts) < 3 {
+		return "oc1" // Default to commercial cloud
+	}
+	return parts[2]
+}
+
+// getDomainFromRealm returns the OCI domain based on the realm identifier.
+// Commercial cloud (oc1) uses oraclecloud.com, all other realms (oc2, oc3, oc4, etc.)
+// use oraclegovcloud.com for government and specialized regions.
+func getDomainFromRealm(realm string) string {
+	if realm == "oc1" {
+		return "oraclecloud"
+	}
+	// All other realms (oc2=US Gov, oc3=US DoD, oc4=UK Gov, oc8=dedicated, etc.)
+	// use the government cloud domain
+	return "oraclegovcloud"
+}
+
 // GetTunnelCommand generates the SSH command for connecting through a bastion.
 func GetTunnelCommand(privateKeyFile string, localPort, remotePort int, remoteIP, sessionID, region, socksProxy string) string {
-	oc := strings.Split(sessionID, ".")[2]
-	domain := "oraclecloud"
-	if strings.Contains(oc, "2") {
-		domain = "oraclegovcloud"
-	}
+	realm := extractRealmFromOCID(sessionID)
+	domain := getDomainFromRealm(realm)
 
 	bastionHost := fmt.Sprintf("host.bastion.%s.oci.%s.com", region, domain)
 
@@ -64,11 +83,8 @@ func FormatBastionGovAddress(region string) string {
 
 // GetBastionDomain determines the domain based on the bastion ID.
 func GetBastionDomain(bastionID string) string {
-	oc := strings.Split(bastionID, ".")[2]
-	if strings.Contains(oc, "2") {
-		return "oraclegovcloud"
-	}
-	return "oraclecloud"
+	realm := extractRealmFromOCID(bastionID)
+	return getDomainFromRealm(realm)
 }
 
 // GetBastionHostAddress returns the full bastion host address.

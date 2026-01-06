@@ -1,5 +1,10 @@
 # GoReleaser configuration for tunatap
 # Documentation: https://goreleaser.com
+#
+# Versioning: CalVer (YYYY.MM.BUILD)
+#   - 2026.01.1 = First release of January 2026
+#   - 2026.01.2 = Second release of January 2026
+#   - 2026.02.1 = First release of February 2026
 
 version: 2
 
@@ -27,8 +32,8 @@ builds:
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
-      - -X main.commit={{.Commit}}
-      - -X main.buildTime={{.Date}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.Date}}
 
 archives:
   - id: default
@@ -52,7 +57,8 @@ checksum:
   algorithm: sha256
 
 snapshot:
-  version_template: "{{ incpatch .Version }}-next"
+  # For snapshot builds, use current date + dev suffix
+  version_template: "{{ .Tag }}-dev+{{.ShortCommit}}"
 
 changelog:
   sort: asc
@@ -84,13 +90,33 @@ release:
     name: tunatap
   draft: false
   prerelease: auto
-  name_template: "{{.ProjectName}} v{{.Version}}"
+  # CalVer doesn't use 'v' prefix
+  name_template: "{{.ProjectName}} {{.Version}}"
   header: |
-    ## Tunatap v{{.Version}}
+    ## Tunatap {{.Version}}
 
     SSH tunnel manager for OCI Bastion services.
+
+    ### What's New
+    See the changelog below for details on what's changed in this release.
+
+    ### Installation
+
+    **Homebrew (macOS/Linux):**
+    ```bash
+    brew install scotttball/tap/tunatap
+    ```
+
+    **Direct Download:**
+    Download the appropriate binary for your platform from the assets below.
   footer: |
+    ---
     **Full Changelog**: https://github.com/scotttball/tunatap/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+    **Verify Checksums:**
+    ```bash
+    sha256sum -c checksums.txt
+    ```
 
 brews:
   - name: tunatap

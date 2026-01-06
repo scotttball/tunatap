@@ -1,31 +1,130 @@
 name: Release
 
 on:
+  # Manual trigger with optional version override
+  workflow_dispatch:
+    inputs:
+      version_override:
+        description: 'Version override (leave empty for auto CalVer)'
+        required: false
+        default: ''
+      prerelease:
+        description: 'Is this a pre-release?'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+  # Auto-release on push to main with [release] in commit message
   push:
-    tags:
-      - 'v*'
+    branches: [main]
 
 permissions:
   contents: write
   packages: write
 
 jobs:
+  check-release:
+    name: Check if Release Needed
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for release trigger
+        id: check
+        run: |
+          # Release if manually triggered
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Check if commit message contains [release]
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          if echo "$COMMIT_MSG" | grep -qi '\[release\]'; then
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_release=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Calculate CalVer version
+        id: version
+        if: steps.check.outputs.should_release == 'true'
+        run: |
+          # Use override if provided
+          if [ -n "${{ github.event.inputs.version_override }}" ]; then
+            VERSION="${{ github.event.inputs.version_override }}"
+            echo "Using override version: $VERSION"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # CalVer format: YYYY.MM.BUILD
+          YEAR=$(date +%Y)
+          MONTH=$(date +%m)
+
+          # Find the latest tag for this month
+          MONTH_PREFIX="${YEAR}.${MONTH}"
+
+          # Get all tags matching this month, sort numerically, get the last one
+          LATEST_TAG=$(git tag -l "${MONTH_PREFIX}.*" | sort -t. -k3 -n | tail -1)
+
+          if [ -z "$LATEST_TAG" ]; then
+            # First release this month
+            BUILD=1
+          else
+            # Increment build number
+            CURRENT_BUILD=$(echo "$LATEST_TAG" | cut -d. -f3)
+            BUILD=$((CURRENT_BUILD + 1))
+          fi
+
+          VERSION="${MONTH_PREFIX}.${BUILD}"
+          echo "Calculated version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
   release:
-    name: Release
+    name: Create Release
+    needs: check-release
+    if: needs.check-release.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Run tests
         run: go test -v -race ./...
+
+      - name: Run linter
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64.8
+          args: --timeout=5m
+
+      - name: Create and push tag
+        run: |
+          VERSION="${{ needs.check-release.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Create annotated tag
+          git tag -a "$VERSION" -m "Release $VERSION"
+          git push origin "$VERSION"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
@@ -35,3 +134,16 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate release summary
+        run: |
+          VERSION="${{ needs.check-release.outputs.version }}"
+          echo "## Release $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Downloads" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- [Linux (amd64)](https://github.com/${{ github.repository }}/releases/download/${VERSION}/tunatap_${VERSION}_linux_amd64.tar.gz)" >> $GITHUB_STEP_SUMMARY
+          echo "- [Linux (arm64)](https://github.com/${{ github.repository }}/releases/download/${VERSION}/tunatap_${VERSION}_linux_arm64.tar.gz)" >> $GITHUB_STEP_SUMMARY
+          echo "- [macOS (Intel)](https://github.com/${{ github.repository }}/releases/download/${VERSION}/tunatap_${VERSION}_darwin_amd64.tar.gz)" >> $GITHUB_STEP_SUMMARY
+          echo "- [macOS (Apple Silicon)](https://github.com/${{ github.repository }}/releases/download/${VERSION}/tunatap_${VERSION}_darwin_arm64.tar.gz)" >> $GITHUB_STEP_SUMMARY
+          echo "- [Windows](https://github.com/${{ github.repository }}/releases/download/${VERSION}/tunatap_${VERSION}_windows_amd64.zip)" >> $GITHUB_STEP_SUMMARY

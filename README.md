@@ -352,6 +352,26 @@ Common issues:
 3. **Bastion session fails**: Check your OCI permissions for Bastion service
 4. **Connection refused**: Verify the cluster endpoint IP and port
 
+## Versioning
+
+Tunatap uses [Calendar Versioning (CalVer)](https://calver.org/) with the format `YYYY.MM.BUILD`:
+
+- `2026.01.1` - First release of January 2026
+- `2026.01.2` - Second release of January 2026
+- `2026.02.1` - First release of February 2026
+
+This versioning scheme makes it easy to understand when a release was made.
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+To trigger a release, include `[release]` in your commit message when merging to main.
+
 ## License
 
 MIT

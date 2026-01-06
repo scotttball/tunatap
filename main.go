@@ -11,6 +11,8 @@ import (
 	"github.com/scotttball/tunatap/cmd"
 )
 
+// Build-time variables set by goreleaser/ldflags
+// CalVer format: YYYY.MM.BUILD (e.g., 2026.01.1)
 var (
 	version = "dev"
 	commit  = "none"

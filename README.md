@@ -1,24 +1,15 @@
 # Tunatap
 
 ```
-            *  . *
-        . *    SPLASH!   *
-     *    \   |   /    .
-          .-""""""-.
-        .'  ___     '.         ~  ~  ~
-       /  .'   '.  @  \       ~       ~
-      |  /  ___  \     |    ~    ~  ~
-     /| |  (   )  |    |\      ~     ~
-    | | |   '-'   | |\ | |   ~   ~ ~
-    | \ \  \___/  / |  \| |     ~  ~
-     \  '.       .'  \    /   ~    ~
-      \   '-...-'  _.-\  /
-       '.   """"   .' \/         ><((('>
-         '-......-'      ~
-                     ~        ~   ~
-      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-          T U N A T A P
-       SSH Tunnel Manager
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        \        \        \        \        \
+         \        \        \        \        \
+   ~~~~~~~\~~~~~~~~\~~~~~~~~\~~~~~~~~\~~~~~~~~\~~~
+            \        \        \        \
+             \        \        \        \
+   <><        \        \        \        \       <><
+   -----------========== TUNATAP ==========-----------
+              secure tunnels beneath the surface
 ```
 
 SSH tunnel manager for OCI Bastion services. Simplifies connecting to private OKE (Oracle Kubernetes Engine) clusters and other private resources through OCI Bastion hosts.

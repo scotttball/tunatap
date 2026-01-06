@@ -66,7 +66,7 @@ type Logger struct {
 // NewLogger creates a new audit logger.
 func NewLogger(logDir string) (*Logger, error) {
 	// Ensure log directory exists
-	if err := os.MkdirAll(logDir, 0755); err != nil {
+	if err := os.MkdirAll(logDir, 0o750); err != nil {
 		return nil, fmt.Errorf("failed to create log directory: %w", err)
 	}
 
@@ -74,7 +74,7 @@ func NewLogger(logDir string) (*Logger, error) {
 	logPath := filepath.Join(logDir, fmt.Sprintf("audit-%s.jsonl", time.Now().Format("2006-01-02")))
 
 	// Open log file in append mode
-	file, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open log file: %w", err)
 	}
@@ -381,30 +381,30 @@ func GetSummary(events []AuditEvent) *Summary {
 		ClusterStats: make(map[string]ClusterStat),
 	}
 
-	for _, e := range events {
-		switch e.EventType {
+	for i := range events {
+		switch events[i].EventType {
 		case EventTypeConnect:
 			summary.TotalConnections++
-			stat := summary.ClusterStats[e.ClusterName]
+			stat := summary.ClusterStats[events[i].ClusterName]
 			stat.ConnectionCount++
-			if e.Timestamp.After(stat.LastAccess) {
-				stat.LastAccess = e.Timestamp
+			if events[i].Timestamp.After(stat.LastAccess) {
+				stat.LastAccess = events[i].Timestamp
 			}
-			summary.ClusterStats[e.ClusterName] = stat
+			summary.ClusterStats[events[i].ClusterName] = stat
 
 		case EventTypeDisconnect:
-			if e.Duration != nil {
-				summary.TotalDuration += *e.Duration
-				stat := summary.ClusterStats[e.ClusterName]
-				stat.TotalDuration += *e.Duration
-				summary.ClusterStats[e.ClusterName] = stat
+			if events[i].Duration != nil {
+				summary.TotalDuration += *events[i].Duration
+				stat := summary.ClusterStats[events[i].ClusterName]
+				stat.TotalDuration += *events[i].Duration
+				summary.ClusterStats[events[i].ClusterName] = stat
 			}
 
 		case EventTypeError:
 			summary.ErrorCount++
-			stat := summary.ClusterStats[e.ClusterName]
+			stat := summary.ClusterStats[events[i].ClusterName]
 			stat.ErrorCount++
-			summary.ClusterStats[e.ClusterName] = stat
+			summary.ClusterStats[events[i].ClusterName] = stat
 		}
 	}
 

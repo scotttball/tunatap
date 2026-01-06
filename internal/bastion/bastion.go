@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -74,11 +72,6 @@ func TunnelThroughBastionWithCallback(ctx context.Context, ociClient *client.OCI
 	return fmt.Errorf("too many failed attempts, giving up")
 }
 
-// handleInternalBastion handles tunneling through an internal bastion.
-func handleInternalBastion(cluster *config.Cluster, endpoint *config.ClusterEndpoint) error {
-	return handleInternalBastionWithCallback(context.Background(), cluster, endpoint, nil)
-}
-
 // handleInternalBastionWithCallback handles tunneling through an internal bastion with a ready callback.
 func handleInternalBastionWithCallback(ctx context.Context, cluster *config.Cluster, endpoint *config.ClusterEndpoint, onReady ReadyCallback) error {
 	log.Info().Msg("Using internal bastion service")
@@ -114,30 +107,25 @@ func handleInternalBastionWithCallback(ctx context.Context, cluster *config.Clus
 	return cmd.Run()
 }
 
-// handleStandardBastion handles tunneling through a standard bastion service.
-func handleStandardBastion(ctx context.Context, ociClient *client.OCIClient, cfg *config.Config, cluster *config.Cluster, endpoint *config.ClusterEndpoint) error {
-	return handleStandardBastionWithCallback(ctx, ociClient, cfg, cluster, endpoint, nil)
-}
-
 // handleStandardBastionWithCallback handles tunneling through a standard bastion service with a ready callback.
 func handleStandardBastionWithCallback(ctx context.Context, ociClient *client.OCIClient, cfg *config.Config, cluster *config.Cluster, endpoint *config.ClusterEndpoint, onReady ReadyCallback) error {
-	var sessionId string
+	var sessionID string
 	var sshConfig ssh.ClientConfig
 
 	log.Info().Msg("Getting bastion session...")
-	err := UpdateBastionConnection(&sessionId, &sshConfig, ociClient, cfg, cluster, endpoint)
+	err := UpdateBastionConnection(&sessionID, &sshConfig, ociClient, cfg, cluster, endpoint)
 	if err != nil {
 		return fmt.Errorf("failed to get session from Bastion: %w", err)
 	}
 
-	log.Info().Msgf("Using session: %s", sessionId)
+	log.Info().Msgf("Using session: %s", sessionID)
 
 	sshCmd := GetTunnelCommand(
 		cfg.SshPrivateKeyFile,
 		*cluster.LocalPort,
 		endpoint.Port,
 		endpoint.Ip,
-		sessionId,
+		sessionID,
 		cluster.Region,
 		cfg.SshSocksProxy,
 	)
@@ -155,7 +143,7 @@ func handleStandardBastionWithCallback(ctx context.Context, ociClient *client.OC
 				return
 			case <-ticker.C:
 				log.Debug().Msg("Periodic update check of bastion session...")
-				if err := UpdateBastionConnection(&sessionId, &sshConfig, ociClient, cfg, cluster, endpoint); err != nil {
+				if err := UpdateBastionConnection(&sessionID, &sshConfig, ociClient, cfg, cluster, endpoint); err != nil {
 					log.Error().Err(err).Msg("Failed to update bastion connection")
 				}
 			}
@@ -268,18 +256,4 @@ func createOCIClient(cfg *config.Config, region string) (*client.OCIClient, erro
 
 	ociClient.SetRegion(region)
 	return ociClient, nil
-}
-
-// portToString converts a port int to string.
-func portToString(port int) string {
-	return strconv.Itoa(port)
-}
-
-// parseOCID extracts region from an OCID.
-func parseOCIDRegion(ocid string) string {
-	parts := strings.Split(ocid, ".")
-	if len(parts) >= 4 {
-		return parts[3]
-	}
-	return ""
 }

@@ -183,7 +183,7 @@ var setupInitCmd = &cobra.Command{
 		cfg.SshPrivateKeyFile = "~/.ssh/id_rsa"
 
 		// Ensure directory exists
-		if err := os.MkdirAll(filepath.Dir(cfgPath), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(cfgPath), 0o750); err != nil {
 			return fmt.Errorf("failed to create config directory: %w", err)
 		}
 

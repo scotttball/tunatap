@@ -144,7 +144,7 @@ func TestFormatBastionGovAddress(t *testing.T) {
 
 func TestGetBastionDomain(t *testing.T) {
 	tests := []struct {
-		bastionId  string
+		bastionID  string
 		wantDomain string
 	}{
 		{"ocid1.bastion.oc1.iad.test", "oraclecloud"},
@@ -153,10 +153,10 @@ func TestGetBastionDomain(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.bastionId, func(t *testing.T) {
-			domain := GetBastionDomain(tt.bastionId)
+		t.Run(tt.bastionID, func(t *testing.T) {
+			domain := GetBastionDomain(tt.bastionID)
 			if domain != tt.wantDomain {
-				t.Errorf("GetBastionDomain(%q) = %q, want %q", tt.bastionId, domain, tt.wantDomain)
+				t.Errorf("GetBastionDomain(%q) = %q, want %q", tt.bastionID, domain, tt.wantDomain)
 			}
 		})
 	}
@@ -164,7 +164,7 @@ func TestGetBastionDomain(t *testing.T) {
 
 func TestGetBastionHostAddress(t *testing.T) {
 	tests := []struct {
-		bastionId string
+		bastionID string
 		region    string
 		want      string
 	}{
@@ -182,7 +182,7 @@ func TestGetBastionHostAddress(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.region, func(t *testing.T) {
-			addr := GetBastionHostAddress(tt.bastionId, tt.region)
+			addr := GetBastionHostAddress(tt.bastionID, tt.region)
 			if addr != tt.want {
 				t.Errorf("GetBastionHostAddress() = %q, want %q", addr, tt.want)
 			}

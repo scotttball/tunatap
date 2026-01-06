@@ -33,7 +33,7 @@ func TestMockOCIClient_CompartmentLookup(t *testing.T) {
 	mock.AddCompartment("infrastructure/kubernetes", "ocid1.compartment.oc1..test123")
 
 	// Test successful lookup
-	ocid, err := mock.GetCompartmentIdByPath(ctx, "ocid1.tenancy.oc1..root", "infrastructure/kubernetes")
+	ocid, err := mock.GetCompartmentIDByPath(ctx, "ocid1.tenancy.oc1..root", "infrastructure/kubernetes")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestMockOCIClient_CompartmentLookup(t *testing.T) {
 	}
 
 	// Test not found
-	_, err = mock.GetCompartmentIdByPath(ctx, "ocid1.tenancy.oc1..root", "nonexistent")
+	_, err = mock.GetCompartmentIDByPath(ctx, "ocid1.tenancy.oc1..root", "nonexistent")
 	if err == nil {
 		t.Error("Expected error for nonexistent compartment")
 	}
@@ -54,23 +54,23 @@ func TestMockOCIClient_ClusterOperations(t *testing.T) {
 
 	// Add test cluster
 	clusterName := "prod-cluster"
-	clusterId := "ocid1.cluster.oc1..testcluster"
+	clusterID := "ocid1.cluster.oc1..testcluster"
 	mock.AddCluster(&containerengine.Cluster{
-		Id:   &clusterId,
+		Id:   &clusterID,
 		Name: &clusterName,
 	})
 
-	// Test FetchClusterId
-	foundId, err := mock.FetchClusterId(ctx, "ocid1.compartment.oc1..test", "prod-cluster")
+	// Test FetchClusterID
+	foundID, err := mock.FetchClusterID(ctx, "ocid1.compartment.oc1..test", "prod-cluster")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	if *foundId != clusterId {
-		t.Errorf("Expected %s, got %s", clusterId, *foundId)
+	if *foundID != clusterID {
+		t.Errorf("Expected %s, got %s", clusterID, *foundID)
 	}
 
 	// Test GetCluster
-	cluster, err := mock.GetCluster(ctx, clusterId)
+	cluster, err := mock.GetCluster(ctx, clusterID)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestMockOCIClient_ClusterOperations(t *testing.T) {
 
 	// Test failure mode
 	mock.ShouldFailCluster = true
-	_, err = mock.FetchClusterId(ctx, "ocid1.compartment.oc1..test", "prod-cluster")
+	_, err = mock.FetchClusterID(ctx, "ocid1.compartment.oc1..test", "prod-cluster")
 	if err == nil {
 		t.Error("Expected error when ShouldFailCluster is true")
 	}
@@ -91,11 +91,11 @@ func TestMockOCIClient_BastionOperations(t *testing.T) {
 	ctx := context.Background()
 
 	// Add test bastion
-	bastionId := "ocid1.bastion.oc1..testbastion"
+	bastionID := "ocid1.bastion.oc1..testbastion"
 	bastionName := "prod-bastion"
 	bastionType := "STANDARD"
 	mock.AddBastion(&bastion.Bastion{
-		Id:          &bastionId,
+		Id:          &bastionID,
 		Name:        &bastionName,
 		BastionType: &bastionType,
 	})
@@ -110,7 +110,7 @@ func TestMockOCIClient_BastionOperations(t *testing.T) {
 	}
 
 	// Test GetBastion
-	b, err := mock.GetBastion(ctx, bastionId)
+	b, err := mock.GetBastion(ctx, bastionID)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -123,15 +123,15 @@ func TestMockOCIClient_SessionLifecycle(t *testing.T) {
 	mock := NewMockOCIClient()
 	ctx := context.Background()
 
-	bastionId := "ocid1.bastion.oc1..testbastion"
+	bastionID := "ocid1.bastion.oc1..testbastion"
 
 	// Create session
 	sessionDetails := bastion.CreateSessionDetails{
-		BastionId:   &bastionId,
+		BastionId:   &bastionID,
 		DisplayName: stringPtr("test-session"),
 	}
 
-	session, err := mock.CreateSession(ctx, bastionId, sessionDetails)
+	session, err := mock.CreateSession(ctx, bastionID, sessionDetails)
 	if err != nil {
 		t.Fatalf("Failed to create session: %v", err)
 	}
@@ -139,10 +139,10 @@ func TestMockOCIClient_SessionLifecycle(t *testing.T) {
 		t.Errorf("Expected CREATING state, got %s", session.LifecycleState)
 	}
 
-	sessionId := *session.Id
+	sessionID := *session.Id
 
 	// Wait for active
-	activeSession, err := mock.WaitForSessionActive(ctx, bastionId, sessionId)
+	activeSession, err := mock.WaitForSessionActive(ctx, bastionID, sessionID)
 	if err != nil {
 		t.Fatalf("Failed to wait for session: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestMockOCIClient_SessionLifecycle(t *testing.T) {
 	}
 
 	// List sessions
-	sessions, err := mock.ListSessions(ctx, bastionId)
+	sessions, err := mock.ListSessions(ctx, bastionID)
 	if err != nil {
 		t.Fatalf("Failed to list sessions: %v", err)
 	}
@@ -160,13 +160,13 @@ func TestMockOCIClient_SessionLifecycle(t *testing.T) {
 	}
 
 	// Delete session
-	err = mock.DeleteSession(ctx, bastionId, sessionId)
+	err = mock.DeleteSession(ctx, bastionID, sessionID)
 	if err != nil {
 		t.Fatalf("Failed to delete session: %v", err)
 	}
 
 	// Verify deleted
-	sessions, _ = mock.ListSessions(ctx, bastionId)
+	sessions, _ = mock.ListSessions(ctx, bastionID)
 	if len(sessions) != 0 {
 		t.Errorf("Expected 0 sessions after delete, got %d", len(sessions))
 	}
@@ -178,21 +178,21 @@ func TestMockOCIClient_SessionWithDelay(t *testing.T) {
 	mock.SessionActiveDelay = 50 * time.Millisecond
 
 	ctx := context.Background()
-	bastionId := "ocid1.bastion.oc1..testbastion"
+	bastionID := "ocid1.bastion.oc1..testbastion"
 
 	start := time.Now()
 
 	sessionDetails := bastion.CreateSessionDetails{
-		BastionId:   &bastionId,
+		BastionId:   &bastionID,
 		DisplayName: stringPtr("delayed-session"),
 	}
 
-	session, err := mock.CreateSession(ctx, bastionId, sessionDetails)
+	session, err := mock.CreateSession(ctx, bastionID, sessionDetails)
 	if err != nil {
 		t.Fatalf("Failed to create session: %v", err)
 	}
 
-	_, err = mock.WaitForSessionActive(ctx, bastionId, *session.Id)
+	_, err = mock.WaitForSessionActive(ctx, bastionID, *session.Id)
 	if err != nil {
 		t.Fatalf("Failed to wait for session: %v", err)
 	}
@@ -208,14 +208,14 @@ func TestMockOCIClient_SessionFailure(t *testing.T) {
 	mock.ShouldFailSession = true
 
 	ctx := context.Background()
-	bastionId := "ocid1.bastion.oc1..testbastion"
+	bastionID := "ocid1.bastion.oc1..testbastion"
 
 	sessionDetails := bastion.CreateSessionDetails{
-		BastionId:   &bastionId,
+		BastionId:   &bastionID,
 		DisplayName: stringPtr("failing-session"),
 	}
 
-	_, err := mock.CreateSession(ctx, bastionId, sessionDetails)
+	_, err := mock.CreateSession(ctx, bastionID, sessionDetails)
 	if err == nil {
 		t.Error("Expected session creation to fail")
 	}

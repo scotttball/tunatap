@@ -4,6 +4,15 @@
 
 Tunatap is a CLI tool that creates SSH tunnels through OCI Bastion services to access private resources like OKE clusters. It manages bastion sessions, SSH connections, and port forwarding with connection pooling for efficiency.
 
+### Zero-Touch Architecture
+
+Tunatap supports a "zero-touch" mode that requires no configuration file:
+
+1. **Dynamic Discovery**: Searches all compartments across all subscribed regions to find clusters by name
+2. **Ephemeral SSH Keys**: Generates ED25519 key pairs in memory for each session (no static key files)
+3. **Intelligent Caching**: Caches discovery results in `~/.tunatap/cache.json` for fast subsequent connections
+4. **Backwards Compatible**: Falls back to config file if present, discovery only runs if cluster not found in config
+
 ## High-Level Data Flow
 
 ```
@@ -59,6 +68,8 @@ tunatap/
 ├── cmd/                         # CLI commands (Cobra)
 │   ├── root.go                  # Root command, global flags, logging setup
 │   ├── connect.go               # Connect command - main tunnel functionality
+│   ├── exec.go                  # Exec command - run commands with tunnel+kubeconfig
+│   ├── cache.go                 # Cache management (show, clear)
 │   ├── setup.go                 # Setup wizard and config subcommands
 │   ├── list.go                  # List clusters and bastions
 │   ├── doctor.go                # Diagnostic checks
@@ -66,11 +77,19 @@ tunatap/
 │   ├── audit.go                 # Configuration auditing
 │   └── version.go               # Version information
 │
-├── internal/                    # Private implementation packages (14 packages)
+├── internal/                    # Private implementation packages (16 packages)
 │   ├── config/                  # Configuration management
 │   │   ├── config.go            # Type definitions (Config, Cluster, Endpoint)
 │   │   ├── reader.go            # YAML read/write operations
 │   │   └── globals.go           # Remote config loading from OCI Object Storage
+│   │
+│   ├── discovery/               # Zero-touch cluster discovery (NEW)
+│   │   ├── discovery.go         # Main discovery orchestration
+│   │   ├── cache.go             # Cache manager (~/.tunatap/cache.json)
+│   │   └── compartment.go       # Recursive compartment traversal
+│   │
+│   ├── sshkeys/                 # Ephemeral SSH key generation (NEW)
+│   │   └── ephemeral.go         # ED25519 key pair generation in memory
 │   │
 │   ├── tunnel/                  # SSH tunnel implementation
 │   │   ├── endpoint.go          # Network endpoint abstraction
@@ -90,7 +109,9 @@ tunatap/
 │   │   └── cluster.go           # Validation, OCID lookup, port allocation
 │   │
 │   ├── client/                  # OCI SDK wrapper
-│   │   └── oci.go               # OCIClient - unified OCI API access
+│   │   ├── oci.go               # OCIClient - unified OCI API access
+│   │   ├── interface.go         # OCIClientInterface for testing
+│   │   └── mock_client.go       # Mock implementation for tests
 │   │
 │   ├── kubeconfig/              # Kubernetes configuration
 │   │   └── kubeconfig.go        # Generate/inject kubeconfig for clusters
@@ -131,6 +152,51 @@ Command-line interface using Cobra framework.
 **connect.go**: Main functionality. Loads config, resolves cluster, creates OCI client, validates cluster configuration, and starts the bastion tunnel. Uses go-fzf for interactive cluster selection.
 
 **setup.go**: Interactive configuration wizard. Prompts for SSH key, SOCKS proxy, and cluster details. Subcommands: `init`, `show`, `add-cluster`, `add-tenancy`.
+
+### internal/discovery/
+
+Zero-touch cluster discovery system.
+
+**Discoverer**: Main discovery orchestration
+- `DiscoverCluster(ctx, name)`: Searches all compartments across all regions
+- `DiscoverBastion(ctx, cluster)`: Finds bastion that can reach cluster
+- `ResolveToConfig(discovered, bastion)`: Converts to `config.Cluster`
+
+**Cache**: TTL-based caching at `~/.tunatap/cache.json`
+- `GetCluster(name)` / `SetCluster(name, entry)`: Cluster caching
+- `GetBastion(name)` / `SetBastion(name, entry)`: Bastion caching
+- `Invalidate(name)` / `InvalidateAll()`: Cache clearing
+- Default TTL: 24 hours
+
+**CompartmentTree**: Recursive compartment traversal
+- `BuildCompartmentTree(ctx, ociClient, tenancyID)`: Build full hierarchy
+- `ForEachParallel(ctx, workers, fn)`: Parallel traversal with rate limiting
+
+**Discovery Algorithm**:
+```
+1. Check cache → return if valid
+2. Get tenancy from OCI config provider
+3. Get subscribed regions (home region searched first)
+4. For each region:
+   a. Build compartment tree
+   b. Search each compartment in parallel
+   c. Match cluster by name (case-insensitive)
+5. Get full cluster details (VCN, subnet, endpoint)
+6. Find bastion in cluster's compartment
+7. Cache results and return
+```
+
+### internal/sshkeys/
+
+Ephemeral SSH key generation for bastion sessions.
+
+**EphemeralKeyPair**: In-memory ED25519 keys
+- `GenerateEphemeralKeyPair()`: Creates new key pair
+- `Signer()`: Returns `ssh.Signer` for tunnel auth
+- `PublicKeyString()`: Returns OpenSSH format for OCI session
+- `AuthMethod()`: Returns `ssh.AuthMethod` for client config
+
+Keys are never written to disk - generated fresh for each session.
 
 ### internal/config/
 
@@ -310,6 +376,39 @@ Cross-platform utilities.
 
 ## Connection Lifecycle
 
+### Zero-Touch Mode
+
+```
+1. Discovery
+   ├── Check cache for cluster → return if valid
+   ├── Get tenancy OCID from OCI config provider
+   ├── Get subscribed regions
+   ├── For each region (home first):
+   │   ├── Build compartment tree
+   │   ├── Search compartments in parallel
+   │   └── Match cluster by name
+   ├── Get cluster details (VCN, subnet, endpoint)
+   ├── Find bastion in cluster's compartment
+   └── Cache results
+
+2. Key Generation
+   └── Generate ephemeral ED25519 key pair (in memory)
+
+3. Session Setup
+   ├── Create bastion session with ephemeral public key
+   ├── Wait for session to become ACTIVE
+   └── Get session SSH endpoint
+
+4. Tunnel Establishment
+   ├── Create connection pool with ephemeral signer
+   ├── Start local TCP listener
+   └── Start health check goroutine
+
+[Continue with steps 4-6 below...]
+```
+
+### Traditional Mode (with config file)
+
 ```
 1. Startup
    ├── Load ~/.tunatap/config.yaml
@@ -325,7 +424,11 @@ Cross-platform utilities.
    ├── Create connection pool (warmup N connections)
    ├── Start local TCP listener
    └── Start health check goroutine
+```
 
+### Common Steps (both modes)
+
+```
 4. Request Forwarding (per connection)
    ├── Accept local connection
    ├── Get SSH connection from pool

@@ -67,10 +67,9 @@ func TestExpandPath(t *testing.T) {
 			}
 
 			// Verify path separators are correct for the OS
-			if runtime.GOOS == "windows" && strings.Contains(result, "/") && len(result) > 1 {
-				// On Windows, paths should use backslashes (except for empty or simple paths)
-				// filepath.Clean handles this, but some edge cases may remain
-			}
+			// On Windows, paths should use backslashes (except for empty or simple paths)
+			// filepath.Clean handles this, but some edge cases may remain
+			_ = runtime.GOOS // Platform-specific behavior tested elsewhere
 		})
 	}
 }

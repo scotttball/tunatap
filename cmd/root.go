@@ -31,7 +31,7 @@ It simplifies connecting to OKE clusters and other private resources via bastion
 		// Set up logging
 		if rawOutput {
 			logPath := filepath.Join(homePath, "tunatap.log")
-			logFile, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+			logFile, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 			if err != nil {
 				return fmt.Errorf("failed to open log file: %w", err)
 			}

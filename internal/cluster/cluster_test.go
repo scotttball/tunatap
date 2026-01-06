@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"context"
 	"testing"
 
 	"github.com/scotttball/tunatap/internal/config"
@@ -167,21 +168,21 @@ func TestGetClusterInfo(t *testing.T) {
 	ocid := "ocid1.cluster.oc1.iad.test"
 	tenant := "my-tenant"
 	compartment := "my-compartment"
-	bastionId := "ocid1.bastion.oc1.iad.test"
+	bastionID := "ocid1.bastion.oc1.iad.test"
 	bastionType := "STANDARD"
 	localPort := 6443
 	url := "https://example.com"
 
 	cluster := &config.Cluster{
-		ClusterName:     "test-cluster",
-		Region:          "us-ashburn-1",
-		Ocid:            &ocid,
-		Tenant:          &tenant,
-		Compartment:     &compartment,
-		BastionId:       &bastionId,
-		BastionType:     &bastionType,
-		LocalPort:       &localPort,
-		URL:             &url,
+		ClusterName: "test-cluster",
+		Region:      "us-ashburn-1",
+		Ocid:        &ocid,
+		Tenant:      &tenant,
+		Compartment: &compartment,
+		BastionId:   &bastionID,
+		BastionType: &bastionType,
+		LocalPort:   &localPort,
+		URL:         &url,
 		Endpoints: []*config.ClusterEndpoint{
 			{Name: "private", Ip: "10.0.0.1", Port: 6443},
 		},
@@ -235,7 +236,7 @@ func TestSetClusterTenancyNotFound(t *testing.T) {
 		Tenant: &tenant,
 	}
 
-	err := SetClusterTenancy(nil, nil, cluster)
+	err := SetClusterTenancy(context.TODO(), nil, cluster)
 	if err == nil {
 		t.Error("SetClusterTenancy should error for non-existent tenant")
 	}
@@ -244,7 +245,7 @@ func TestSetClusterTenancyNotFound(t *testing.T) {
 func TestSetClusterTenancyNoTenant(t *testing.T) {
 	cluster := &config.Cluster{}
 
-	err := SetClusterTenancy(nil, nil, cluster)
+	err := SetClusterTenancy(context.TODO(), nil, cluster)
 	if err != nil {
 		t.Errorf("SetClusterTenancy should not error when tenant is nil: %v", err)
 	}
@@ -253,7 +254,7 @@ func TestSetClusterTenancyNoTenant(t *testing.T) {
 func TestSetClusterOcidMissingFields(t *testing.T) {
 	cluster := &config.Cluster{}
 
-	err := SetClusterOcid(nil, nil, cluster)
+	err := SetClusterOcid(context.TODO(), nil, cluster)
 	if err == nil {
 		t.Error("SetClusterOcid should error when required fields are missing")
 	}
@@ -268,7 +269,7 @@ func TestSetClusterOcidWithOcid(t *testing.T) {
 	}
 
 	// Should not error when OCID and CompartmentOcid are already set
-	err := SetClusterOcid(nil, nil, cluster)
+	err := SetClusterOcid(context.TODO(), nil, cluster)
 	if err != nil {
 		t.Errorf("SetClusterOcid should not error when OCID is set: %v", err)
 	}
@@ -277,7 +278,7 @@ func TestSetClusterOcidWithOcid(t *testing.T) {
 func TestGetClusterBastionNilCompartment(t *testing.T) {
 	cluster := &config.Cluster{}
 
-	_, err := GetClusterBastion(nil, nil, cluster)
+	_, err := GetClusterBastion(context.TODO(), nil, cluster)
 	if err == nil {
 		t.Error("GetClusterBastion should error when CompartmentOcid is nil")
 	}
@@ -298,7 +299,7 @@ func TestValidateAndUpdateClusterMinimal(t *testing.T) {
 	}
 
 	// This will fail without an OCI client, but shouldn't panic
-	err := ValidateAndUpdateCluster(nil, nil, cluster, false, 6443)
+	err := ValidateAndUpdateCluster(context.TODO(), nil, cluster, false, 6443)
 	if err == nil {
 		// If it doesn't error, that's fine too
 		t.Log("ValidateAndUpdateCluster succeeded with nil client")

@@ -64,7 +64,7 @@ func TestFetchFile(t *testing.T) {
 version: "1.0"
 name: "test-catalog"
 `
-	if err := os.WriteFile(catalogPath, []byte(catalogYAML), 0644); err != nil {
+	if err := os.WriteFile(catalogPath, []byte(catalogYAML), 0o600); err != nil {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
@@ -261,8 +261,8 @@ func TestApplyDefaults(t *testing.T) {
 			LocalPort:   6443,
 		},
 		Clusters: []*config.Cluster{
-			{ClusterName: "cluster1"},                            // Should get defaults
-			{ClusterName: "cluster2", Region: "us-phoenix-1"},   // Should keep its region
+			{ClusterName: "cluster1"},                         // Should get defaults
+			{ClusterName: "cluster2", Region: "us-phoenix-1"}, // Should keep its region
 		},
 	}
 

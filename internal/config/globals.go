@@ -140,7 +140,7 @@ func LoadRemoteConfig(ctx context.Context, config *Config, ociClient interface {
 	log.Debug().Msgf("Remote config loaded: %d bytes", len(resp))
 
 	// Save the response to the output YAML file
-	err = os.WriteFile(remoteConfigPath, resp, 0644)
+	err = os.WriteFile(remoteConfigPath, resp, 0o600)
 	if err != nil {
 		log.Error().Err(err).Msgf("Failed to save remote config to file: %s", remoteConfigPath)
 		return remoteConfigPath, err
@@ -162,9 +162,8 @@ func LoadRemoteConfig(ctx context.Context, config *Config, ociClient interface {
 
 // FindClusterByName finds a cluster by name in the config.
 func FindClusterByName(config *Config, name string) *Cluster {
-	name = strings.ToLower(name)
 	for _, cluster := range config.Clusters {
-		if strings.ToLower(cluster.ClusterName) == name {
+		if strings.EqualFold(cluster.ClusterName, name) {
 			return cluster
 		}
 	}
@@ -181,9 +180,8 @@ func GetClusterEndpoint(cluster *Cluster, name string) *ClusterEndpoint {
 		return cluster.Endpoints[0]
 	}
 
-	name = strings.ToLower(name)
 	for _, ep := range cluster.Endpoints {
-		if strings.ToLower(ep.Name) == name {
+		if strings.EqualFold(ep.Name, name) {
 			return ep
 		}
 	}

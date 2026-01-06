@@ -35,10 +35,10 @@ const (
 
 // OCIClient wraps multiple OCI SDK clients.
 type OCIClient struct {
-	configProvider     common.ConfigurationProvider
-	identityClient     identity.IdentityClient
-	bastionClient      bastion.BastionClient
-	containerClient    containerengine.ContainerEngineClient
+	configProvider      common.ConfigurationProvider
+	identityClient      identity.IdentityClient
+	bastionClient       bastion.BastionClient
+	containerClient     containerengine.ContainerEngineClient
 	objectStorageClient objectstorage.ObjectStorageClient
 }
 
@@ -287,26 +287,26 @@ func (c *OCIClient) GetObject(ctx context.Context, namespace, bucket, object str
 	return data, nil
 }
 
-// GetCompartmentIdByPath finds a compartment by path (e.g., "parent/child/grandchild").
-func (c *OCIClient) GetCompartmentIdByPath(ctx context.Context, tenancyOcid, path string) (*string, error) {
+// GetCompartmentIDByPath finds a compartment by path (e.g., "parent/child/grandchild").
+func (c *OCIClient) GetCompartmentIDByPath(ctx context.Context, tenancyOcid, path string) (*string, error) {
 	parts := strings.Split(path, "/")
-	currentCompartmentId := tenancyOcid
+	currentCompartmentID := tenancyOcid
 
 	for _, part := range parts {
-		compartmentId, err := c.findCompartmentByName(ctx, currentCompartmentId, part)
+		compartmentID, err := c.findCompartmentByName(ctx, currentCompartmentID, part)
 		if err != nil {
 			return nil, err
 		}
-		currentCompartmentId = *compartmentId
+		currentCompartmentID = *compartmentID
 	}
 
-	return &currentCompartmentId, nil
+	return &currentCompartmentID, nil
 }
 
 // findCompartmentByName finds a compartment by name within a parent compartment.
-func (c *OCIClient) findCompartmentByName(ctx context.Context, parentId, name string) (*string, error) {
+func (c *OCIClient) findCompartmentByName(ctx context.Context, parentID, name string) (*string, error) {
 	request := identity.ListCompartmentsRequest{
-		CompartmentId: &parentId,
+		CompartmentId: &parentID,
 		Name:          &name,
 	}
 
@@ -316,16 +316,16 @@ func (c *OCIClient) findCompartmentByName(ctx context.Context, parentId, name st
 	}
 
 	if len(response.Items) == 0 {
-		return nil, fmt.Errorf("compartment '%s' not found in %s", name, parentId)
+		return nil, fmt.Errorf("compartment '%s' not found in %s", name, parentID)
 	}
 
 	return response.Items[0].Id, nil
 }
 
-// FetchClusterId finds a cluster OCID by name in a compartment.
-func (c *OCIClient) FetchClusterId(ctx context.Context, compartmentId, clusterName string) (*string, error) {
+// FetchClusterID finds a cluster OCID by name in a compartment.
+func (c *OCIClient) FetchClusterID(ctx context.Context, compartmentID, clusterName string) (*string, error) {
 	request := containerengine.ListClustersRequest{
-		CompartmentId: &compartmentId,
+		CompartmentId: &compartmentID,
 		Name:          &clusterName,
 	}
 
@@ -340,13 +340,13 @@ func (c *OCIClient) FetchClusterId(ctx context.Context, compartmentId, clusterNa
 		}
 	}
 
-	return nil, fmt.Errorf("cluster '%s' not found in compartment %s", clusterName, compartmentId)
+	return nil, fmt.Errorf("cluster '%s' not found in compartment %s", clusterName, compartmentID)
 }
 
 // GetCluster retrieves cluster details by OCID.
-func (c *OCIClient) GetCluster(ctx context.Context, clusterId string) (*containerengine.Cluster, error) {
+func (c *OCIClient) GetCluster(ctx context.Context, clusterID string) (*containerengine.Cluster, error) {
 	request := containerengine.GetClusterRequest{
-		ClusterId: &clusterId,
+		ClusterId: &clusterID,
 	}
 
 	response, err := c.containerClient.GetCluster(ctx, request)
@@ -358,9 +358,9 @@ func (c *OCIClient) GetCluster(ctx context.Context, clusterId string) (*containe
 }
 
 // ListBastions lists all bastions in a compartment.
-func (c *OCIClient) ListBastions(ctx context.Context, compartmentId string) ([]bastion.BastionSummary, error) {
+func (c *OCIClient) ListBastions(ctx context.Context, compartmentID string) ([]bastion.BastionSummary, error) {
 	request := bastion.ListBastionsRequest{
-		CompartmentId: &compartmentId,
+		CompartmentId: &compartmentID,
 	}
 
 	response, err := c.bastionClient.ListBastions(ctx, request)
@@ -372,9 +372,9 @@ func (c *OCIClient) ListBastions(ctx context.Context, compartmentId string) ([]b
 }
 
 // GetBastion retrieves bastion details by OCID.
-func (c *OCIClient) GetBastion(ctx context.Context, bastionId string) (*bastion.Bastion, error) {
+func (c *OCIClient) GetBastion(ctx context.Context, bastionID string) (*bastion.Bastion, error) {
 	request := bastion.GetBastionRequest{
-		BastionId: &bastionId,
+		BastionId: &bastionID,
 	}
 
 	response, err := c.bastionClient.GetBastion(ctx, request)
@@ -386,7 +386,7 @@ func (c *OCIClient) GetBastion(ctx context.Context, bastionId string) (*bastion.
 }
 
 // CreateSession creates a new bastion session.
-func (c *OCIClient) CreateSession(ctx context.Context, bastionId string, sessionDetails bastion.CreateSessionDetails) (*bastion.Session, error) {
+func (c *OCIClient) CreateSession(ctx context.Context, bastionID string, sessionDetails bastion.CreateSessionDetails) (*bastion.Session, error) {
 	request := bastion.CreateSessionRequest{
 		CreateSessionDetails: sessionDetails,
 	}
@@ -400,9 +400,9 @@ func (c *OCIClient) CreateSession(ctx context.Context, bastionId string, session
 }
 
 // GetSession retrieves session details by OCID.
-func (c *OCIClient) GetSession(ctx context.Context, bastionId, sessionId string) (*bastion.Session, error) {
+func (c *OCIClient) GetSession(ctx context.Context, bastionID, sessionID string) (*bastion.Session, error) {
 	request := bastion.GetSessionRequest{
-		SessionId: &sessionId,
+		SessionId: &sessionID,
 	}
 
 	response, err := c.bastionClient.GetSession(ctx, request)
@@ -414,9 +414,9 @@ func (c *OCIClient) GetSession(ctx context.Context, bastionId, sessionId string)
 }
 
 // ListSessions lists sessions for a bastion.
-func (c *OCIClient) ListSessions(ctx context.Context, bastionId string) ([]bastion.SessionSummary, error) {
+func (c *OCIClient) ListSessions(ctx context.Context, bastionID string) ([]bastion.SessionSummary, error) {
 	request := bastion.ListSessionsRequest{
-		BastionId: &bastionId,
+		BastionId: &bastionID,
 	}
 
 	response, err := c.bastionClient.ListSessions(ctx, request)
@@ -428,9 +428,9 @@ func (c *OCIClient) ListSessions(ctx context.Context, bastionId string) ([]basti
 }
 
 // DeleteSession deletes a bastion session.
-func (c *OCIClient) DeleteSession(ctx context.Context, bastionId, sessionId string) error {
+func (c *OCIClient) DeleteSession(ctx context.Context, bastionID, sessionID string) error {
 	request := bastion.DeleteSessionRequest{
-		SessionId: &sessionId,
+		SessionId: &sessionID,
 	}
 
 	_, err := c.bastionClient.DeleteSession(ctx, request)
@@ -438,18 +438,18 @@ func (c *OCIClient) DeleteSession(ctx context.Context, bastionId, sessionId stri
 		return fmt.Errorf("failed to delete session: %w", err)
 	}
 
-	log.Debug().Msgf("Deleted session: %s", sessionId)
+	log.Debug().Msgf("Deleted session: %s", sessionID)
 	return nil
 }
 
 // WaitForSessionActive waits for a session to become active.
-func (c *OCIClient) WaitForSessionActive(ctx context.Context, bastionId, sessionId string) (*bastion.Session, error) {
+func (c *OCIClient) WaitForSessionActive(ctx context.Context, bastionID, sessionID string) (*bastion.Session, error) {
 	for {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		default:
-			session, err := c.GetSession(ctx, bastionId, sessionId)
+			session, err := c.GetSession(ctx, bastionID, sessionID)
 			if err != nil {
 				return nil, err
 			}
@@ -464,4 +464,70 @@ func (c *OCIClient) WaitForSessionActive(ctx context.Context, bastionId, session
 			log.Debug().Msgf("Session state: %s, waiting...", session.LifecycleState)
 		}
 	}
+}
+
+// GetTenancyOCID returns the tenancy OCID from the config provider.
+func (c *OCIClient) GetTenancyOCID() (string, error) {
+	return c.configProvider.TenancyOCID()
+}
+
+// ListCompartments lists all compartments in a parent compartment.
+func (c *OCIClient) ListCompartments(ctx context.Context, parentID string) ([]identity.Compartment, error) {
+	request := identity.ListCompartmentsRequest{
+		CompartmentId:          &parentID,
+		AccessLevel:            identity.ListCompartmentsAccessLevelAccessible,
+		CompartmentIdInSubtree: common.Bool(false),
+		LifecycleState:         identity.CompartmentLifecycleStateActive,
+	}
+
+	var allCompartments []identity.Compartment
+	for {
+		response, err := c.identityClient.ListCompartments(ctx, request)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list compartments: %w", err)
+		}
+		allCompartments = append(allCompartments, response.Items...)
+		if response.OpcNextPage == nil {
+			break
+		}
+		request.Page = response.OpcNextPage
+	}
+	return allCompartments, nil
+}
+
+// ListClustersInCompartment lists all OKE clusters in a compartment.
+func (c *OCIClient) ListClustersInCompartment(ctx context.Context, compartmentID string) ([]containerengine.ClusterSummary, error) {
+	request := containerengine.ListClustersRequest{
+		CompartmentId: &compartmentID,
+		LifecycleState: []containerengine.ClusterLifecycleStateEnum{
+			containerengine.ClusterLifecycleStateActive,
+			containerengine.ClusterLifecycleStateUpdating,
+		},
+	}
+
+	var allClusters []containerengine.ClusterSummary
+	for {
+		response, err := c.containerClient.ListClusters(ctx, request)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list clusters: %w", err)
+		}
+		allClusters = append(allClusters, response.Items...)
+		if response.OpcNextPage == nil {
+			break
+		}
+		request.Page = response.OpcNextPage
+	}
+	return allClusters, nil
+}
+
+// GetSubscribedRegions returns the list of regions the tenancy is subscribed to.
+func (c *OCIClient) GetSubscribedRegions(ctx context.Context, tenancyID string) ([]identity.RegionSubscription, error) {
+	request := identity.ListRegionSubscriptionsRequest{
+		TenancyId: &tenancyID,
+	}
+	response, err := c.identityClient.ListRegionSubscriptions(ctx, request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list region subscriptions: %w", err)
+	}
+	return response.Items, nil
 }

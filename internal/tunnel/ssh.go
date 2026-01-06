@@ -228,6 +228,24 @@ func CreateSSHClientConfigWithAgent(username, keyFilePath string) (*ssh.ClientCo
 	}, nil
 }
 
+// CreateSSHClientConfigWithSigner creates an SSH client config using a provided signer.
+// This is used for ephemeral in-memory keys that are never written to disk.
+func CreateSSHClientConfigWithSigner(username string, signer ssh.Signer) (*ssh.ClientConfig, error) {
+	customCallback, err := GetKnownHostsCallbackWithNewHost()
+	if err != nil {
+		return nil, err
+	}
+
+	return &ssh.ClientConfig{
+		User: username,
+		Auth: []ssh.AuthMethod{
+			ssh.PublicKeys(signer),
+		},
+		HostKeyCallback: customCallback,
+		Timeout:         0,
+	}, nil
+}
+
 // CreateSSHClientConfigPreferAgent creates an SSH client config preferring agent over key file.
 // If preferAgent is true, tries agent first. Otherwise, uses key file first.
 func CreateSSHClientConfigPreferAgent(username, keyFilePath string, preferAgent bool) (*ssh.ClientConfig, error) {

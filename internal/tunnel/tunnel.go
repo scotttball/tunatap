@@ -237,7 +237,7 @@ func (tunnel *SSHTunnel) forward(ctx context.Context, localConn net.Conn, connPo
 		for {
 			select {
 			case <-ctx.Done():
-				log.Debug().Msg("Pipe routine cancelled due to context cancellation")
+				log.Debug().Msg("Pipe routine canceled due to context cancellation")
 				return
 			default:
 				n, err := reader.Read(buf)
@@ -265,7 +265,7 @@ func (tunnel *SSHTunnel) forward(ctx context.Context, localConn net.Conn, connPo
 	select {
 	case <-done:
 	case <-ctx.Done():
-		log.Debug().Msg("Forward routine cancelled")
+		log.Debug().Msg("Forward routine canceled")
 	}
 }
 

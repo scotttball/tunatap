@@ -135,14 +135,14 @@ func TestConcurrentAccess(t *testing.T) {
 	// Test concurrent writes
 	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)
-		go func(id int) {
+		go func() {
 			defer wg.Done()
 			ocid := "ocid1.tenancy.oc1..test"
 			state.SetTenancy("concurrent-test", &ocid)
 			state.GetTenancyByName("concurrent-test")
 			state.GetHomePath()
 			state.SetHomePath("/test/path")
-		}(i)
+		}()
 	}
 
 	wg.Wait()

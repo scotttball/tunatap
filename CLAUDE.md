@@ -125,8 +125,24 @@ make tools                    # Installs golangci-lint, gosec, delve, goreleaser
 
 Tunatap is an SSH tunnel manager for OCI (Oracle Cloud Infrastructure) Bastion services, primarily used for connecting to private OKE (Oracle Kubernetes Engine) clusters.
 
+### Zero-Touch Mode
+
+Tunatap supports a "zero-touch" mode requiring no configuration file:
+- **Dynamic Discovery**: Searches all compartments across all subscribed regions
+- **Ephemeral SSH Keys**: Generates ED25519 keys in memory (never written to disk)
+- **Intelligent Caching**: Results cached in `~/.tunatap/cache.json` (24h TTL)
+
 ### Data Flow
 
+**Zero-Touch Mode:**
+1. User runs `tunatap connect <cluster>` or `tunatap exec <cluster> -- kubectl get nodes`
+2. Check cache for cluster info → use if valid
+3. If not cached: discover cluster across all compartments/regions
+4. Generate ephemeral ED25519 key pair
+5. Create bastion session with ephemeral public key
+6. Establish SSH tunnel, forward connections
+
+**Traditional Mode:**
 1. User runs `tunatap connect <cluster>`
 2. Config is loaded from `~/.tunatap/config.yaml`
 3. OCI client authenticates using `~/.oci/config`
@@ -138,10 +154,16 @@ Tunatap is an SSH tunnel manager for OCI (Oracle Cloud Infrastructure) Bastion s
 
 ```
 cmd/
-  └── calls internal/config, internal/bastion, internal/cluster, internal/client
+  └── calls internal/config, internal/bastion, internal/cluster, internal/client, internal/discovery
+
+internal/discovery/
+  └── cluster discovery, caching, compartment traversal (NEW)
+
+internal/sshkeys/
+  └── ephemeral ED25519 key generation (NEW)
 
 internal/bastion/
-  └── orchestrates tunneling, calls internal/tunnel, internal/client, internal/config
+  └── orchestrates tunneling, calls internal/tunnel, internal/client, internal/config, internal/sshkeys
 
 internal/tunnel/
   └── manages SSH tunnels, calls internal/pool
@@ -153,7 +175,7 @@ internal/cluster/
   └── cluster validation, calls internal/client
 
 internal/client/
-  └── OCI SDK wrapper (standalone)
+  └── OCI SDK wrapper with mock for testing
 
 internal/config/
   └── config types and YAML I/O, calls internal/state

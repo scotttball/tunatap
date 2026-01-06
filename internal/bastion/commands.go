@@ -7,8 +7,8 @@ import (
 )
 
 // GetTunnelCommand generates the SSH command for connecting through a bastion.
-func GetTunnelCommand(privateKeyFile string, localPort, remotePort int, remoteIP, sessionId, region, socksProxy string) string {
-	oc := strings.Split(sessionId, ".")[2]
+func GetTunnelCommand(privateKeyFile string, localPort, remotePort int, remoteIP, sessionID, region, socksProxy string) string {
+	oc := strings.Split(sessionID, ".")[2]
 	domain := "oraclecloud"
 	if strings.Contains(oc, "2") {
 		domain = "oraclegovcloud"
@@ -24,19 +24,19 @@ func GetTunnelCommand(privateKeyFile string, localPort, remotePort int, remoteIP
 	}
 
 	cmd += fmt.Sprintf(" -N -L %d:%s:%d -p 22 %s@%s",
-		localPort, remoteIP, remotePort, sessionId, bastionHost)
+		localPort, remoteIP, remotePort, sessionID, bastionHost)
 
 	return cmd
 }
 
 // GetInternalTunnelCommand generates the SSH command for internal bastion type.
-func GetInternalTunnelCommand(localPort, remotePort int, remoteIP, bastionId, jumpBoxIP, region, compartmentId, bastionLB string) string {
+func GetInternalTunnelCommand(localPort, remotePort int, remoteIP, bastionID, jumpBoxIP, region, compartmentID, bastionLB string) string {
 	cmd := fmt.Sprintf("ssh -o StrictHostKeyChecking=accept-new -o ProxyUseFdpass=no "+
 		"-N -L %d:%s:%d "+
 		"-o ProxyCommand=\"ssh -o StrictHostKeyChecking=accept-new -W %%h:%%p -p 22 %s@%s\" "+
 		"opc@%s",
 		localPort, remoteIP, remotePort,
-		bastionId, bastionLB,
+		bastionID, bastionLB,
 		jumpBoxIP)
 
 	return cmd
@@ -63,8 +63,8 @@ func FormatBastionGovAddress(region string) string {
 }
 
 // GetBastionDomain determines the domain based on the bastion ID.
-func GetBastionDomain(bastionId string) string {
-	oc := strings.Split(bastionId, ".")[2]
+func GetBastionDomain(bastionID string) string {
+	oc := strings.Split(bastionID, ".")[2]
 	if strings.Contains(oc, "2") {
 		return "oraclegovcloud"
 	}
@@ -72,8 +72,8 @@ func GetBastionDomain(bastionId string) string {
 }
 
 // GetBastionHostAddress returns the full bastion host address.
-func GetBastionHostAddress(bastionId, region string) string {
-	domain := GetBastionDomain(bastionId)
+func GetBastionHostAddress(bastionID, region string) string {
+	domain := GetBastionDomain(bastionID)
 	return fmt.Sprintf("host.bastion.%s.oci.%s.com:22", region, domain)
 }
 

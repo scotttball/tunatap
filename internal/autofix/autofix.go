@@ -252,7 +252,7 @@ func (f *Fixer) fixDirectories() error {
 	}
 
 	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return fmt.Errorf("failed to create %s: %w", dir, err)
 		}
 		log.Info().Str("directory", dir).Msg("Created directory")
@@ -267,7 +267,7 @@ func (f *Fixer) fixSSHKey() error {
 
 	// Ensure .ssh directory exists
 	sshDir := filepath.Dir(keyPath)
-	if err := os.MkdirAll(sshDir, 0700); err != nil {
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
 		return fmt.Errorf("failed to create .ssh directory: %w", err)
 	}
 

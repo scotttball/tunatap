@@ -11,15 +11,16 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/scotttball/tunatap/internal/client"
 	"github.com/scotttball/tunatap/internal/config"
+	"github.com/scotttball/tunatap/internal/sshkeys"
 	"github.com/scotttball/tunatap/internal/tunnel"
 	"golang.org/x/crypto/ssh"
 )
 
 const (
-	sessionMaxTTLHours      = 3
-	sessionCheckBuffer      = 10 * time.Minute
-	sessionRefreshBuffer    = 5 * time.Minute  // Start refresh 5 minutes before expiration
-	sessionRefreshInterval  = 30 * time.Second // How often to check for refresh
+	sessionMaxTTLHours     = 3
+	sessionCheckBuffer     = 10 * time.Minute
+	sessionRefreshBuffer   = 5 * time.Minute  // Start refresh 5 minutes before expiration
+	sessionRefreshInterval = 30 * time.Second // How often to check for refresh
 )
 
 // SessionManager manages bastion sessions.
@@ -31,14 +32,46 @@ type SessionManager struct {
 	currentSession    *bastion.Session
 	sessionExpiration time.Time
 	mu                sync.RWMutex
+
+	// Ephemeral key support
+	ephemeralKeyPair *sshkeys.EphemeralKeyPair
+	useEphemeralKeys bool
 }
 
 // NewSessionManager creates a new session manager.
 func NewSessionManager(ociClient *client.OCIClient, cfg *config.Config) *SessionManager {
+	// Use ephemeral keys if no SSH key file is configured or if explicitly enabled
+	useEphemeral := cfg.SshPrivateKeyFile == "" || cfg.UseEphemeralKeys
 	return &SessionManager{
-		ociClient: ociClient,
-		config:    cfg,
+		ociClient:        ociClient,
+		config:           cfg,
+		useEphemeralKeys: useEphemeral,
 	}
+}
+
+// NewSessionManagerWithEphemeralKeys creates a session manager that uses ephemeral keys.
+func NewSessionManagerWithEphemeralKeys(ociClient *client.OCIClient, cfg *config.Config) *SessionManager {
+	return &SessionManager{
+		ociClient:        ociClient,
+		config:           cfg,
+		useEphemeralKeys: true,
+	}
+}
+
+// GetEphemeralSigner returns the ephemeral signer if ephemeral keys are being used.
+// Returns nil if ephemeral keys are not in use.
+func (m *SessionManager) GetEphemeralSigner() ssh.Signer {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.ephemeralKeyPair != nil {
+		return m.ephemeralKeyPair.Signer()
+	}
+	return nil
+}
+
+// IsUsingEphemeralKeys returns true if the session manager is using ephemeral keys.
+func (m *SessionManager) IsUsingEphemeralKeys() bool {
+	return m.useEphemeralKeys
 }
 
 // GetCurrentSessionID returns the current session ID if available.
@@ -240,10 +273,28 @@ func (m *SessionManager) sessionHasTimeRemaining(session *bastion.Session) bool 
 func (m *SessionManager) createSession(ctx context.Context, cluster *config.Cluster, endpoint *config.ClusterEndpoint) (*bastion.Session, error) {
 	log.Info().Msgf("Creating new bastion session for %s:%d", endpoint.Ip, endpoint.Port)
 
-	// Read the public key
-	publicKey, err := m.getPublicKey()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read public key: %w", err)
+	var publicKey string
+	var err error
+
+	// Use ephemeral keys if configured
+	if m.useEphemeralKeys {
+		log.Info().Msg("Using ephemeral SSH keys (in-memory, never written to disk)")
+		keyPair, keyErr := sshkeys.GenerateEphemeralKeyPair()
+		if keyErr != nil {
+			return nil, fmt.Errorf("failed to generate ephemeral keys: %w", keyErr)
+		}
+		publicKey = keyPair.PublicKeyString()
+
+		// Store the key pair for use in SSH connections
+		m.mu.Lock()
+		m.ephemeralKeyPair = keyPair
+		m.mu.Unlock()
+	} else {
+		// Use traditional key file
+		publicKey, err = m.getPublicKey()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read public key: %w", err)
+		}
 	}
 
 	sessionTTL := sessionMaxTTLHours * 3600 // Convert to seconds
@@ -260,8 +311,8 @@ func (m *SessionManager) createSession(ctx context.Context, cluster *config.Clus
 		KeyDetails: &bastion.PublicKeyDetails{
 			PublicKeyContent: &publicKey,
 		},
-		DisplayName:              stringPtr(fmt.Sprintf("tunatap-%s-%d", endpoint.Ip, endpoint.Port)),
-		SessionTtlInSeconds:     &sessionTTL,
+		DisplayName:         stringPtr(fmt.Sprintf("tunatap-%s-%d", endpoint.Ip, endpoint.Port)),
+		SessionTtlInSeconds: &sessionTTL,
 	}
 
 	session, err := m.ociClient.CreateSession(ctx, *cluster.BastionId, sessionDetails)
@@ -329,8 +380,22 @@ func (m *SessionManager) getPublicKey() (string, error) {
 
 // UpdateBastionConnection updates session and SSH config for a connection.
 func UpdateBastionConnection(
-	sessionId *string,
+	sessionID *string,
 	sshConfig *ssh.ClientConfig,
+	ociClient *client.OCIClient,
+	cfg *config.Config,
+	cluster *config.Cluster,
+	endpoint *config.ClusterEndpoint,
+) error {
+	return UpdateBastionConnectionWithManager(sessionID, sshConfig, nil, ociClient, cfg, cluster, endpoint)
+}
+
+// UpdateBastionConnectionWithManager updates session and SSH config using a provided session manager.
+// If manager is nil, a new one is created.
+func UpdateBastionConnectionWithManager(
+	sessionID *string,
+	sshConfig *ssh.ClientConfig,
+	manager *SessionManager,
 	ociClient *client.OCIClient,
 	cfg *config.Config,
 	cluster *config.Cluster,
@@ -338,16 +403,28 @@ func UpdateBastionConnection(
 ) error {
 	ctx := context.Background()
 
-	manager := NewSessionManager(ociClient, cfg)
+	if manager == nil {
+		manager = NewSessionManager(ociClient, cfg)
+	}
+
 	session, err := manager.GetOrCreateSession(ctx, cluster, endpoint)
 	if err != nil {
 		return fmt.Errorf("failed to get or create session: %w", err)
 	}
 
-	*sessionId = *session.Id
+	*sessionID = *session.Id
 
-	// Create SSH config for bastion connection, preferring SSH agent
-	newConfig, err := tunnel.CreateSSHClientConfigWithAgent(*sessionId, cfg.SshPrivateKeyFile)
+	var newConfig *ssh.ClientConfig
+
+	// Use ephemeral signer if available
+	if signer := manager.GetEphemeralSigner(); signer != nil {
+		log.Debug().Msg("Using ephemeral key for SSH authentication")
+		newConfig, err = tunnel.CreateSSHClientConfigWithSigner(*sessionID, signer)
+	} else {
+		// Fall back to SSH agent and key file
+		newConfig, err = tunnel.CreateSSHClientConfigWithAgent(*sessionID, cfg.SshPrivateKeyFile)
+	}
+
 	if err != nil {
 		return fmt.Errorf("failed to create SSH config: %w", err)
 	}

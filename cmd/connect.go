@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -14,19 +15,22 @@ import (
 	"github.com/scotttball/tunatap/internal/client"
 	"github.com/scotttball/tunatap/internal/cluster"
 	"github.com/scotttball/tunatap/internal/config"
+	"github.com/scotttball/tunatap/internal/discovery"
 	"github.com/scotttball/tunatap/internal/preflight"
 	"github.com/scotttball/tunatap/pkg/utils"
 	"github.com/spf13/cobra"
 )
 
 var (
-	clusterName     string
-	localPort       int
-	bastionName     string
-	endpointName    string
-	noBastion       bool
+	clusterName      string
+	localPort        int
+	bastionName      string
+	endpointName     string
+	noBastion        bool
 	connectPreflight bool
-	skipPreflight   bool
+	skipPreflight    bool
+	regionHint       string
+	noCache          bool
 )
 
 var connectCmd = &cobra.Command{
@@ -48,6 +52,8 @@ func init() {
 	connectCmd.Flags().BoolVar(&noBastion, "no-bastion", false, "connect directly without bastion")
 	connectCmd.Flags().BoolVar(&connectPreflight, "preflight", false, "run preflight checks before connecting")
 	connectCmd.Flags().BoolVar(&skipPreflight, "skip-preflight", false, "skip quick preflight validation")
+	connectCmd.Flags().StringVarP(&regionHint, "region", "r", "", "region hint for cluster discovery (optional)")
+	connectCmd.Flags().BoolVar(&noCache, "no-cache", false, "skip cache and force fresh discovery")
 }
 
 func runConnect(cmd *cobra.Command, args []string) error {
@@ -56,21 +62,78 @@ func runConnect(cmd *cobra.Command, args []string) error {
 		clusterName = args[0]
 	}
 
-	// Load configuration
-	cfg, err := config.ReadConfig(GetConfigFile())
-	if err != nil {
-		return fmt.Errorf("failed to read config: %w", err)
+	// Try to load configuration (non-fatal if missing for zero-touch mode)
+	cfg, cfgErr := config.ReadConfig(GetConfigFile())
+	if cfgErr != nil {
+		// Use default config for zero-touch mode
+		log.Debug().Msg("No config file found, using zero-touch mode")
+		cfg = config.DefaultConfig()
+	} else {
+		// Configure globals from config
+		if err := config.ConfigureGlobals(cfg); err != nil {
+			return fmt.Errorf("failed to configure globals: %w", err)
+		}
 	}
 
-	// Configure globals
-	if err := config.ConfigureGlobals(cfg); err != nil {
-		return fmt.Errorf("failed to configure globals: %w", err)
+	var selectedCluster *config.Cluster
+	var ociClient *client.OCIClient
+	var err error
+
+	// Try to find cluster in config first (if we have a config)
+	if clusterName != "" && cfgErr == nil && !cfg.SkipDiscovery {
+		selectedCluster = config.FindClusterByName(cfg, clusterName)
 	}
 
-	// Select or find cluster
-	selectedCluster, err := selectCluster(cfg, clusterName)
-	if err != nil {
-		return err
+	// If not found in config, try discovery
+	if selectedCluster == nil && clusterName != "" {
+		log.Info().Msgf("Cluster '%s' not found in config, attempting discovery...", clusterName)
+
+		// Create OCI client with auto-detection for discovery
+		ociClient, err = createOCIClientForDiscovery(cfg)
+		if err != nil {
+			return fmt.Errorf("failed to create OCI client: %w", err)
+		}
+
+		// Initialize cache
+		var cache *discovery.Cache
+		if !noCache {
+			ttl := time.Duration(cfg.GetCacheTTLHours()) * time.Hour
+			cache, _ = discovery.NewCache(utils.DefaultTunatapDir(), ttl)
+		}
+
+		// Perform discovery
+		discoverer := discovery.NewDiscoverer(ociClient, cache)
+		hints := &discovery.DiscoveryHints{Region: regionHint}
+
+		discovered, err := discoverer.DiscoverClusterWithHints(cmd.Context(), clusterName, hints)
+		if err != nil {
+			// Check if multiple clusters found - offer interactive selection
+			if errors.Is(err, discovery.ErrMultipleClustersFound) {
+				return err // The error message already contains all matches
+			}
+			return fmt.Errorf("discovery failed: %w", err)
+		}
+
+		// Discover bastion
+		bastionInfo, err := discoverer.DiscoverBastion(cmd.Context(), discovered)
+		if err != nil {
+			return fmt.Errorf("failed to discover bastion: %w", err)
+		}
+
+		// Convert to config.Cluster
+		selectedCluster, err = discoverer.ResolveToConfig(discovered, bastionInfo)
+		if err != nil {
+			return fmt.Errorf("failed to resolve cluster config: %w", err)
+		}
+
+		// Set region on OCI client
+		ociClient.SetRegion(discovered.Region)
+	} else if selectedCluster == nil {
+		// Interactive selection from config (or error if no clusters)
+		selectedCluster, err = selectCluster(cfg, clusterName)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Override bastion if specified
@@ -87,10 +150,12 @@ func runConnect(cmd *cobra.Command, args []string) error {
 	log.Info().Msgf("Connecting to cluster: %s", selectedCluster.ClusterName)
 	log.Info().Msgf("Endpoint: %s:%d", endpoint.Ip, endpoint.Port)
 
-	// Create OCI client
-	ociClient, err := createOCIClient(cfg, selectedCluster.Region)
-	if err != nil {
-		return fmt.Errorf("failed to create OCI client: %w", err)
+	// Create OCI client if not already created (for config-based flow)
+	if ociClient == nil {
+		ociClient, err = createOCIClient(cfg, selectedCluster.Region)
+		if err != nil {
+			return fmt.Errorf("failed to create OCI client: %w", err)
+		}
 	}
 
 	// Validate and update cluster configuration
@@ -144,6 +209,22 @@ func runConnect(cmd *cobra.Command, args []string) error {
 
 	// Direct connection without bastion (for future use)
 	return fmt.Errorf("direct connection without bastion not yet implemented")
+}
+
+// createOCIClientForDiscovery creates an OCI client for discovery operations.
+// Uses auto-detection of authentication without requiring config values.
+func createOCIClientForDiscovery(cfg *config.Config) (*client.OCIClient, error) {
+	configPath := cfg.OCIConfigPath
+	if configPath == "" {
+		configPath = utils.DefaultOCIConfigPath()
+	}
+
+	profile := cfg.OCIProfile
+	if profile == "" {
+		profile = "DEFAULT"
+	}
+
+	return client.NewOCIClientAuto(configPath, profile)
 }
 
 func selectCluster(cfg *config.Config, name string) (*config.Cluster, error) {

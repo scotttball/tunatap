@@ -31,11 +31,11 @@ func ValidateAndUpdateCluster(ctx context.Context, ociClient *client.OCIClient, 
 	SetClusterURL(cluster)
 
 	if useBastion && cluster.BastionId == nil {
-		bastionId, err := GetClusterBastion(ctx, ociClient, cluster)
+		bastionID, err := GetClusterBastion(ctx, ociClient, cluster)
 		if err != nil {
 			return err
 		}
-		cluster.BastionId = bastionId
+		cluster.BastionId = bastionID
 
 		if cluster.BastionId != nil {
 			b, err := ociClient.GetBastion(ctx, *cluster.BastionId)
@@ -115,8 +115,8 @@ func SetClusterTenancy(ctx context.Context, ociClient *client.OCIClient, cluster
 	globalState := state.GetInstance()
 
 	if cluster.Tenant != nil {
-		if tenancyId, ok := globalState.GetTenancyByName(*cluster.Tenant); ok {
-			cluster.TenantOcid = tenancyId
+		if tenancyID, ok := globalState.GetTenancyByName(*cluster.Tenant); ok {
+			cluster.TenantOcid = tenancyID
 		} else {
 			return fmt.Errorf("tenant '%s' not found in tenancies list", *cluster.Tenant)
 		}
@@ -133,26 +133,24 @@ func SetClusterOcid(ctx context.Context, ociClient *client.OCIClient, cluster *c
 		}
 
 		if cluster.CompartmentOcid == nil {
-			compartmentId, err := ociClient.GetCompartmentIdByPath(ctx, *cluster.TenantOcid, *cluster.Compartment)
+			compartmentID, err := ociClient.GetCompartmentIDByPath(ctx, *cluster.TenantOcid, *cluster.Compartment)
 			if err != nil {
 				return fmt.Errorf("failed to get compartment id: %w", err)
 			}
-			cluster.CompartmentOcid = compartmentId
+			cluster.CompartmentOcid = compartmentID
 		}
 
-		clusterId, err := ociClient.FetchClusterId(ctx, *cluster.CompartmentOcid, cluster.ClusterName)
+		clusterID, err := ociClient.FetchClusterID(ctx, *cluster.CompartmentOcid, cluster.ClusterName)
 		if err != nil {
 			return fmt.Errorf("failed to fetch cluster id: %w", err)
 		}
-		cluster.Ocid = clusterId
-	} else {
-		if cluster.CompartmentOcid == nil {
-			resp, err := ociClient.GetCluster(ctx, *cluster.Ocid)
-			if err != nil {
-				return fmt.Errorf("failed to fetch cluster: %w", err)
-			}
-			cluster.CompartmentOcid = resp.CompartmentId
+		cluster.Ocid = clusterID
+	} else if cluster.CompartmentOcid == nil {
+		resp, err := ociClient.GetCluster(ctx, *cluster.Ocid)
+		if err != nil {
+			return fmt.Errorf("failed to fetch cluster: %w", err)
 		}
+		cluster.CompartmentOcid = resp.CompartmentId
 	}
 
 	return nil
@@ -210,7 +208,7 @@ func assignBastionByName(cluster *config.Cluster, bastions []bastion.BastionSumm
 }
 
 // allowUserToSelectBastion prompts the user to select a bastion interactively.
-func allowUserToSelectBastion(cluster *config.Cluster, bastions []bastion.BastionSummary) (*string, error) {
+func allowUserToSelectBastion(_ *config.Cluster, bastions []bastion.BastionSummary) (*string, error) {
 	f, err := fzf.New()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize fuzzy finder: %w", err)

@@ -10,13 +10,13 @@ import (
 
 // Kubeconfig represents a Kubernetes configuration file.
 type Kubeconfig struct {
-	APIVersion     string           `yaml:"apiVersion"`
-	Kind           string           `yaml:"kind"`
-	CurrentContext string           `yaml:"current-context,omitempty"`
-	Clusters       []ClusterEntry   `yaml:"clusters"`
-	Contexts       []ContextEntry   `yaml:"contexts"`
-	Users          []UserEntry      `yaml:"users,omitempty"`
-	Preferences    map[string]any   `yaml:"preferences,omitempty"`
+	APIVersion     string         `yaml:"apiVersion"`
+	Kind           string         `yaml:"kind"`
+	CurrentContext string         `yaml:"current-context,omitempty"`
+	Clusters       []ClusterEntry `yaml:"clusters"`
+	Contexts       []ContextEntry `yaml:"contexts"`
+	Users          []UserEntry    `yaml:"users,omitempty"`
+	Preferences    map[string]any `yaml:"preferences,omitempty"`
 }
 
 // ClusterEntry represents a cluster configuration.
@@ -53,20 +53,20 @@ type UserEntry struct {
 
 // UserConfig contains user authentication details.
 type UserConfig struct {
-	Token                 string          `yaml:"token,omitempty"`
-	ClientCertificateData string          `yaml:"client-certificate-data,omitempty"`
-	ClientKeyData         string          `yaml:"client-key-data,omitempty"`
-	Exec                  *ExecConfig     `yaml:"exec,omitempty"`
+	Token                 string      `yaml:"token,omitempty"`
+	ClientCertificateData string      `yaml:"client-certificate-data,omitempty"`
+	ClientKeyData         string      `yaml:"client-key-data,omitempty"`
+	Exec                  *ExecConfig `yaml:"exec,omitempty"`
 }
 
 // ExecConfig represents an exec-based authentication configuration.
 type ExecConfig struct {
-	APIVersion         string            `yaml:"apiVersion"`
-	Command            string            `yaml:"command"`
-	Args               []string          `yaml:"args,omitempty"`
-	Env                []ExecEnvVar      `yaml:"env,omitempty"`
-	InteractiveMode    string            `yaml:"interactiveMode,omitempty"`
-	ProvideClusterInfo bool              `yaml:"provideClusterInfo,omitempty"`
+	APIVersion         string       `yaml:"apiVersion"`
+	Command            string       `yaml:"command"`
+	Args               []string     `yaml:"args,omitempty"`
+	Env                []ExecEnvVar `yaml:"env,omitempty"`
+	InteractiveMode    string       `yaml:"interactiveMode,omitempty"`
+	ProvideClusterInfo bool         `yaml:"provideClusterInfo,omitempty"`
 }
 
 // ExecEnvVar represents an environment variable for exec config.

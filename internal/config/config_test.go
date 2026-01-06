@@ -309,10 +309,10 @@ func TestGetClusterEndpoint(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
-		epName   string
-		wantIp   string
-		wantNil  bool
+		name    string
+		epName  string
+		wantIp  string
+		wantNil bool
 	}{
 		{"first endpoint by default", "", "10.0.0.1", false},
 		{"by name private", "private", "10.0.0.1", false},

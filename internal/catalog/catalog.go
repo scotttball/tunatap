@@ -19,14 +19,14 @@ import (
 
 // SharedCatalog represents a shared cluster catalog.
 type SharedCatalog struct {
-	Version     string              `yaml:"version"`
-	Name        string              `yaml:"name"`
-	Description string              `yaml:"description,omitempty"`
-	Maintainer  string              `yaml:"maintainer,omitempty"`
-	Updated     string              `yaml:"updated,omitempty"`
-	Clusters    []*config.Cluster   `yaml:"clusters"`
+	Version     string               `yaml:"version"`
+	Name        string               `yaml:"name"`
+	Description string               `yaml:"description,omitempty"`
+	Maintainer  string               `yaml:"maintainer,omitempty"`
+	Updated     string               `yaml:"updated,omitempty"`
+	Clusters    []*config.Cluster    `yaml:"clusters"`
 	Tenancies   []*config.TenantInfo `yaml:"tenancies,omitempty"`
-	Defaults    *CatalogDefaults    `yaml:"defaults,omitempty"`
+	Defaults    *CatalogDefaults     `yaml:"defaults,omitempty"`
 }
 
 // CatalogDefaults contains default values applied to catalog entries.
@@ -38,11 +38,11 @@ type CatalogDefaults struct {
 
 // CatalogManager handles fetching and merging catalogs.
 type CatalogManager struct {
-	sources     []*config.CatalogSource
-	cacheDir    string
-	cacheTTL    time.Duration
-	ociClient   *client.OCIClient
-	httpClient  *http.Client
+	sources    []*config.CatalogSource
+	cacheDir   string
+	cacheTTL   time.Duration
+	ociClient  *client.OCIClient
+	httpClient *http.Client
 }
 
 // NewCatalogManager creates a new catalog manager.
@@ -218,9 +218,7 @@ func (m *CatalogManager) fetchOCI(ctx context.Context, source *config.CatalogSou
 // fetchFile fetches a catalog from a local file.
 func (m *CatalogManager) fetchFile(path string) ([]byte, error) {
 	// Handle file:// URLs
-	if strings.HasPrefix(path, "file://") {
-		path = strings.TrimPrefix(path, "file://")
-	}
+	path = strings.TrimPrefix(path, "file://")
 
 	// Expand home directory
 	if strings.HasPrefix(path, "~") {
@@ -269,12 +267,12 @@ func (m *CatalogManager) saveToCache(source *config.CatalogSource, data []byte) 
 	}
 
 	// Ensure cache directory exists
-	if err := os.MkdirAll(m.cacheDir, 0755); err != nil {
+	if err := os.MkdirAll(m.cacheDir, 0o750); err != nil {
 		return err
 	}
 
 	cachePath := m.cachePath(source)
-	return os.WriteFile(cachePath, data, 0644)
+	return os.WriteFile(cachePath, data, 0o600)
 }
 
 // cachePath returns the cache file path for a source.

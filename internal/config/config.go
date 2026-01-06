@@ -41,6 +41,23 @@ type Config struct {
 
 	// OCIProfile is the profile to use from the OCI config file.
 	OCIProfile string `yaml:"oci_profile,omitempty"`
+
+	// Zero-Touch settings
+
+	// UseEphemeralKeys enables ephemeral in-memory SSH keys (never written to disk).
+	// Default: true when SshPrivateKeyFile is not set.
+	UseEphemeralKeys bool `yaml:"use_ephemeral_keys,omitempty"`
+
+	// CacheTTLHours is the cache TTL in hours for discovered cluster mappings.
+	// Default: 24 hours.
+	CacheTTLHours *int `yaml:"cache_ttl_hours,omitempty"`
+
+	// SkipDiscovery disables auto-discovery of clusters not in config.
+	SkipDiscovery bool `yaml:"skip_discovery,omitempty"`
+
+	// DiscoveryRegions specifies which regions to search during discovery.
+	// If empty, all subscribed regions are searched.
+	DiscoveryRegions []string `yaml:"discovery_regions,omitempty"`
 }
 
 // TenantInfo represents a tenancy configuration.
@@ -184,4 +201,12 @@ func (c *Config) GetMaxConcurrent() int {
 		return *c.SshConnectionMaxConcurrentUse
 	}
 	return 10
+}
+
+// GetCacheTTLHours returns the cache TTL in hours with default fallback.
+func (c *Config) GetCacheTTLHours() int {
+	if c.CacheTTLHours != nil {
+		return *c.CacheTTLHours
+	}
+	return 24 // Default 24 hours
 }

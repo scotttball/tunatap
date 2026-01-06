@@ -37,11 +37,11 @@ var auditShowCmd = &cobra.Command{
 }
 
 var (
-	auditLimit       int
-	auditCluster     string
-	auditSince       string
-	auditEventType   string
-	auditJSON        bool
+	auditLimit     int
+	auditCluster   string
+	auditSince     string
+	auditEventType string
+	auditJSON      bool
 )
 
 func init() {
@@ -94,13 +94,13 @@ func runAuditList(cmd *cobra.Command, args []string) error {
 
 	if auditJSON {
 		// JSON output
-		for _, e := range events {
-			fmt.Printf("%+v\n", e)
+		for i := range events {
+			fmt.Printf("%+v\n", events[i])
 		}
 	} else {
 		// Human-readable output
-		for _, e := range events {
-			fmt.Println(audit.FormatEvent(&e))
+		for i := range events {
+			fmt.Println(audit.FormatEvent(&events[i]))
 		}
 	}
 
@@ -173,8 +173,8 @@ func runAuditShow(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Session: %s\n", sessionID)
 	fmt.Println("=========")
-	for _, e := range events {
-		fmt.Println(audit.FormatEvent(&e))
+	for i := range events {
+		fmt.Println(audit.FormatEvent(&events[i]))
 	}
 
 	return nil

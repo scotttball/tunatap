@@ -16,6 +16,10 @@ SSH tunnel manager for OCI Bastion services. Simplifies connecting to private OK
 
 ## Features
 
+- **Zero-Touch Mode**: Connect to clusters by name without any configuration file
+- **Dynamic Discovery**: Automatically discovers clusters across all compartments and regions
+- **Ephemeral SSH Keys**: In-memory ED25519 key generation (no static key files needed)
+- **Intelligent Caching**: Discovery results cached for fast subsequent connections
 - **SSH Tunneling**: Establish secure tunnels through OCI Bastion services
 - **Connection Pooling**: Efficient SSH connection reuse with configurable pool size
 - **Bastion Types**: Support for both STANDARD (OCI Bastion service) and INTERNAL (jump box) modes
@@ -24,6 +28,7 @@ SSH tunnel manager for OCI Bastion services. Simplifies connecting to private OK
 - **Cross-Platform**: Full support for Linux, macOS, and Windows
 - **Multiple Auth Methods**: OCI config file, instance principal, resource principal, security token, auto-detect
 - **Kubeconfig Injection**: Automatic kubeconfig generation for connected clusters
+- **Exec Pattern**: Run commands with tunnel and kubeconfig automatically configured
 - **Remote Config**: Load shared cluster catalogs from OCI Object Storage
 - **Health Monitoring**: Automatic connection health checks with keepalive probes
 - **Session Management**: Automatic bastion session refresh before expiration
@@ -99,11 +104,38 @@ GOOS=windows GOARCH=amd64 go build -o tunatap.exe .
 
 ## Prerequisites
 
-- OCI CLI configured (`~/.oci/config`)
-- SSH key pair for bastion authentication
+- OCI CLI configured (`~/.oci/config`) - that's it for zero-touch mode!
+- (Optional) SSH key pair for bastion authentication (ephemeral keys used by default)
 - Access to OCI Bastion service in your tenancy
 
 ## Quick Start
+
+### Zero-Touch Mode (Recommended)
+
+No configuration file needed! Just ensure your OCI CLI is configured:
+
+```bash
+# Connect to any cluster by name - tunatap discovers it automatically
+tunatap connect my-cluster
+
+# Run kubectl commands through the tunnel
+tunatap exec my-cluster -- kubectl get nodes
+
+# Speed up discovery with a region hint
+tunatap connect my-cluster --region us-phoenix-1
+```
+
+Tunatap will:
+1. Search all compartments across all subscribed regions
+2. Find the cluster and its bastion
+3. Generate ephemeral SSH keys
+4. Establish the tunnel
+
+Results are cached for 24 hours for fast subsequent connections.
+
+### Traditional Mode (with config file)
+
+If you prefer explicit configuration:
 
 1. Initialize configuration:
    ```bash
@@ -161,22 +193,73 @@ clusters:
 | `oci_auth_type` | Authentication method: `auto`, `config`, `instance_principal`, `resource_principal`, `security_token` | `auto` |
 | `oci_config_path` | Path to OCI config file | `~/.oci/config` |
 | `oci_profile` | OCI config profile name | `DEFAULT` |
+| `use_ephemeral_keys` | Use in-memory SSH keys instead of file-based | `false` |
+| `cache_ttl_hours` | Discovery cache time-to-live in hours | `24` |
+| `skip_discovery` | Disable automatic cluster discovery | `false` |
+| `discovery_regions` | Regions to search during discovery (empty = all subscribed) | `[]` |
 
 ## Commands
 
 ### connect
 
-Connect to a cluster through bastion.
+Connect to a cluster through bastion. Works in both zero-touch and config-based modes.
 
 ```bash
 tunatap connect [cluster-name]
 
 # Flags
 -c, --cluster    Cluster name to connect to
--p, --port       Local port for the tunnel (default: 6443)
+-p, --port       Local port for the tunnel (0 for auto)
 -b, --bastion    Bastion name to use
 -e, --endpoint   Endpoint name (e.g., 'private', 'public')
+-r, --region     Region hint for discovery (speeds up search)
     --no-bastion Connect directly without bastion
+    --no-cache   Skip cache and force fresh discovery
+    --preflight  Run preflight checks before connecting
+```
+
+### exec
+
+Run a command with tunnel and kubeconfig automatically configured.
+
+```bash
+tunatap exec [cluster] -- <command> [args...]
+
+# Examples
+tunatap exec my-cluster -- kubectl get nodes
+tunatap exec my-cluster -- helm list -A
+tunatap exec -c prod -- k9s
+
+# Flags
+-c, --cluster      Cluster name to connect to
+-e, --endpoint     Endpoint name (e.g., 'private', 'public')
+-b, --bastion      Bastion name to use
+-r, --region       Region hint for discovery
+    --no-oci-auth  Disable OCI exec-auth in kubeconfig
+    --oci-profile  OCI config profile for exec-auth
+    --no-cache     Skip cache and force fresh discovery
+```
+
+The exec command:
+1. Establishes a tunnel to the cluster
+2. Creates a temporary kubeconfig pointing to `localhost:<port>`
+3. Sets `KUBECONFIG` environment variable
+4. Runs your command
+5. Cleans up tunnel and kubeconfig on exit
+
+### cache
+
+Manage the discovery cache.
+
+```bash
+# Show all cached entries
+tunatap cache show
+
+# Clear entire cache
+tunatap cache clear
+
+# Clear cache for a specific cluster
+tunatap cache clear my-cluster
 ```
 
 ### setup

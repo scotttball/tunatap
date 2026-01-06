@@ -2,27 +2,34 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/rs/zerolog/log"
 	"github.com/scotttball/tunatap/internal/bastion"
+	"github.com/scotttball/tunatap/internal/client"
 	"github.com/scotttball/tunatap/internal/cluster"
 	"github.com/scotttball/tunatap/internal/config"
+	"github.com/scotttball/tunatap/internal/discovery"
 	"github.com/scotttball/tunatap/internal/kubeconfig"
+	"github.com/scotttball/tunatap/pkg/utils"
 	"github.com/spf13/cobra"
 )
 
 var (
-	execClusterName   string
-	execEndpointName  string
-	execBastionName   string
-	execNoOCIAuth     bool
-	execOCIProfile    string
+	execClusterName  string
+	execEndpointName string
+	execBastionName  string
+	execNoOCIAuth    bool
+	execOCIProfile   string
+	execRegionHint   string
+	execNoCache      bool
 )
 
 var execCmd = &cobra.Command{
@@ -51,6 +58,8 @@ func init() {
 	execCmd.Flags().StringVarP(&execBastionName, "bastion", "b", "", "bastion name to use")
 	execCmd.Flags().BoolVar(&execNoOCIAuth, "no-oci-auth", false, "disable OCI exec-auth in kubeconfig (use insecure mode)")
 	execCmd.Flags().StringVar(&execOCIProfile, "oci-profile", "", "OCI config profile for exec-auth (overrides config)")
+	execCmd.Flags().StringVarP(&execRegionHint, "region", "r", "", "region hint for cluster discovery (optional)")
+	execCmd.Flags().BoolVar(&execNoCache, "no-cache", false, "skip cache and force fresh discovery")
 }
 
 func runExec(cmd *cobra.Command, args []string) error {
@@ -73,15 +82,17 @@ func runExec(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no command specified")
 	}
 
-	// Load configuration
-	cfg, err := config.ReadConfig(GetConfigFile())
-	if err != nil {
-		return fmt.Errorf("failed to read config: %w", err)
-	}
-
-	// Configure globals
-	if err := config.ConfigureGlobals(cfg); err != nil {
-		return fmt.Errorf("failed to configure globals: %w", err)
+	// Try to load configuration (non-fatal if missing for zero-touch mode)
+	cfg, cfgErr := config.ReadConfig(GetConfigFile())
+	if cfgErr != nil {
+		// Use default config for zero-touch mode
+		log.Debug().Msg("No config file found, using zero-touch mode")
+		cfg = config.DefaultConfig()
+	} else {
+		// Configure globals from config
+		if err := config.ConfigureGlobals(cfg); err != nil {
+			return fmt.Errorf("failed to configure globals: %w", err)
+		}
 	}
 
 	// Determine cluster name
@@ -90,10 +101,64 @@ func runExec(cmd *cobra.Command, args []string) error {
 		clusterToUse = clusterArg
 	}
 
-	// Select cluster
-	selectedCluster, err := selectCluster(cfg, clusterToUse)
-	if err != nil {
-		return err
+	var selectedCluster *config.Cluster
+	var ociClient *client.OCIClient
+	var err error
+
+	// Try to find cluster in config first (if we have a config)
+	if clusterToUse != "" && cfgErr == nil && !cfg.SkipDiscovery {
+		selectedCluster = config.FindClusterByName(cfg, clusterToUse)
+	}
+
+	// If not found in config, try discovery
+	if selectedCluster == nil && clusterToUse != "" {
+		log.Info().Msgf("Cluster '%s' not found in config, attempting discovery...", clusterToUse)
+
+		// Create OCI client with auto-detection for discovery
+		ociClient, err = createOCIClientForDiscovery(cfg)
+		if err != nil {
+			return fmt.Errorf("failed to create OCI client: %w", err)
+		}
+
+		// Initialize cache
+		var cache *discovery.Cache
+		if !execNoCache {
+			ttl := time.Duration(cfg.GetCacheTTLHours()) * time.Hour
+			cache, _ = discovery.NewCache(utils.DefaultTunatapDir(), ttl)
+		}
+
+		// Perform discovery
+		discoverer := discovery.NewDiscoverer(ociClient, cache)
+		hints := &discovery.DiscoveryHints{Region: execRegionHint}
+
+		discovered, err := discoverer.DiscoverClusterWithHints(cmd.Context(), clusterToUse, hints)
+		if err != nil {
+			if errors.Is(err, discovery.ErrMultipleClustersFound) {
+				return err
+			}
+			return fmt.Errorf("discovery failed: %w", err)
+		}
+
+		// Discover bastion
+		bastionInfo, err := discoverer.DiscoverBastion(cmd.Context(), discovered)
+		if err != nil {
+			return fmt.Errorf("failed to discover bastion: %w", err)
+		}
+
+		// Convert to config.Cluster
+		selectedCluster, err = discoverer.ResolveToConfig(discovered, bastionInfo)
+		if err != nil {
+			return fmt.Errorf("failed to resolve cluster config: %w", err)
+		}
+
+		// Set region on OCI client
+		ociClient.SetRegion(discovered.Region)
+	} else if selectedCluster == nil {
+		// Interactive selection from config (or error if no clusters)
+		selectedCluster, err = selectCluster(cfg, clusterToUse)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Override bastion if specified
@@ -109,10 +174,12 @@ func runExec(cmd *cobra.Command, args []string) error {
 
 	log.Info().Msgf("Connecting to cluster: %s", selectedCluster.ClusterName)
 
-	// Create OCI client
-	ociClient, err := createOCIClient(cfg, selectedCluster.Region)
-	if err != nil {
-		return fmt.Errorf("failed to create OCI client: %w", err)
+	// Create OCI client if not already created (for config-based flow)
+	if ociClient == nil {
+		ociClient, err = createOCIClient(cfg, selectedCluster.Region)
+		if err != nil {
+			return fmt.Errorf("failed to create OCI client: %w", err)
+		}
 	}
 
 	// Validate cluster with auto port allocation
@@ -225,9 +292,4 @@ func createTempKubeconfig(cfg *config.Config, cluster *config.Cluster, port int,
 	}
 
 	return kubeconfigPath, nil
-}
-
-// selectClusterForExec selects a cluster by name or interactively.
-func selectClusterForExec(cfg *config.Config, name string) (*config.Cluster, error) {
-	return selectCluster(cfg, name)
 }

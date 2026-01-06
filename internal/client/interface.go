@@ -5,6 +5,7 @@ import (
 
 	"github.com/oracle/oci-go-sdk/v65/bastion"
 	"github.com/oracle/oci-go-sdk/v65/containerengine"
+	"github.com/oracle/oci-go-sdk/v65/identity"
 )
 
 // OCIClientInterface defines the interface for OCI operations.
@@ -21,22 +22,28 @@ type OCIClientInterface interface {
 	GetObject(ctx context.Context, namespace, bucket, object string) ([]byte, error)
 
 	// Identity operations
-	GetCompartmentIdByPath(ctx context.Context, tenancyOcid, path string) (*string, error)
+	GetCompartmentIDByPath(ctx context.Context, tenancyOcid, path string) (*string, error)
 
 	// Container Engine operations
-	FetchClusterId(ctx context.Context, compartmentId, clusterName string) (*string, error)
-	GetCluster(ctx context.Context, clusterId string) (*containerengine.Cluster, error)
+	FetchClusterID(ctx context.Context, compartmentID, clusterName string) (*string, error)
+	GetCluster(ctx context.Context, clusterID string) (*containerengine.Cluster, error)
 
 	// Bastion operations
-	ListBastions(ctx context.Context, compartmentId string) ([]bastion.BastionSummary, error)
-	GetBastion(ctx context.Context, bastionId string) (*bastion.Bastion, error)
+	ListBastions(ctx context.Context, compartmentID string) ([]bastion.BastionSummary, error)
+	GetBastion(ctx context.Context, bastionID string) (*bastion.Bastion, error)
 
 	// Session operations
-	CreateSession(ctx context.Context, bastionId string, sessionDetails bastion.CreateSessionDetails) (*bastion.Session, error)
-	GetSession(ctx context.Context, bastionId, sessionId string) (*bastion.Session, error)
-	ListSessions(ctx context.Context, bastionId string) ([]bastion.SessionSummary, error)
-	DeleteSession(ctx context.Context, bastionId, sessionId string) error
-	WaitForSessionActive(ctx context.Context, bastionId, sessionId string) (*bastion.Session, error)
+	CreateSession(ctx context.Context, bastionID string, sessionDetails bastion.CreateSessionDetails) (*bastion.Session, error)
+	GetSession(ctx context.Context, bastionID, sessionID string) (*bastion.Session, error)
+	ListSessions(ctx context.Context, bastionID string) ([]bastion.SessionSummary, error)
+	DeleteSession(ctx context.Context, bastionID, sessionID string) error
+	WaitForSessionActive(ctx context.Context, bastionID, sessionID string) (*bastion.Session, error)
+
+	// Discovery operations (zero-touch support)
+	GetTenancyOCID() (string, error)
+	ListCompartments(ctx context.Context, parentID string) ([]identity.Compartment, error)
+	ListClustersInCompartment(ctx context.Context, compartmentID string) ([]containerengine.ClusterSummary, error)
+	GetSubscribedRegions(ctx context.Context, tenancyID string) ([]identity.RegionSubscription, error)
 }
 
 // Ensure OCIClient implements OCIClientInterface

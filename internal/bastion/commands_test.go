@@ -162,6 +162,103 @@ func TestGetBastionDomain(t *testing.T) {
 	}
 }
 
+func TestGetBastionDomainAllRealms(t *testing.T) {
+	tests := []struct {
+		name       string
+		bastionID  string
+		wantDomain string
+	}{
+		// Commercial cloud
+		{"commercial oc1", "ocid1.bastion.oc1.us-ashburn-1.aaaatest", "oraclecloud"},
+		{"commercial oc1 phoenix", "ocid1.bastion.oc1.us-phoenix-1.aaaatest", "oraclecloud"},
+		{"commercial oc1 frankfurt", "ocid1.bastion.oc1.eu-frankfurt-1.aaaatest", "oraclecloud"},
+
+		// US Government cloud (FedRAMP)
+		{"us gov oc2", "ocid1.bastion.oc2.us-langley-1.aaaatest", "oraclegovcloud"},
+		{"us gov oc2 luke", "ocid1.bastion.oc2.us-luke-1.aaaatest", "oraclegovcloud"},
+
+		// US DoD cloud
+		{"us dod oc3", "ocid1.bastion.oc3.us-gov-ashburn-1.aaaatest", "oraclegovcloud"},
+		{"us dod oc3 chicago", "ocid1.bastion.oc3.us-gov-chicago-1.aaaatest", "oraclegovcloud"},
+
+		// UK Government cloud
+		{"uk gov oc4", "ocid1.bastion.oc4.uk-gov-london-1.aaaatest", "oraclegovcloud"},
+		{"uk gov oc4 cardiff", "ocid1.bastion.oc4.uk-gov-cardiff-1.aaaatest", "oraclegovcloud"},
+
+		// Dedicated regions (oc8, oc9, etc.)
+		{"dedicated oc8", "ocid1.bastion.oc8.ap-chiyoda-1.aaaatest", "oraclegovcloud"},
+		{"dedicated oc9", "ocid1.bastion.oc9.me-dcc-doha-1.aaaatest", "oraclegovcloud"},
+		{"dedicated oc10", "ocid1.bastion.oc10.ap-dcc-gazipur-1.aaaatest", "oraclegovcloud"},
+
+		// Edge cases
+		{"invalid short ocid", "ocid1.bastion", "oraclecloud"}, // Defaults to oc1
+		{"empty ocid", "", "oraclecloud"},                      // Defaults to oc1
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			domain := GetBastionDomain(tt.bastionID)
+			if domain != tt.wantDomain {
+				t.Errorf("GetBastionDomain(%q) = %q, want %q", tt.bastionID, domain, tt.wantDomain)
+			}
+		})
+	}
+}
+
+func TestExtractRealmFromOCID(t *testing.T) {
+	tests := []struct {
+		name      string
+		ocid      string
+		wantRealm string
+	}{
+		{"commercial oc1", "ocid1.bastion.oc1.us-ashburn-1.test", "oc1"},
+		{"us gov oc2", "ocid1.bastion.oc2.us-langley-1.test", "oc2"},
+		{"us dod oc3", "ocid1.bastion.oc3.us-gov-ashburn-1.test", "oc3"},
+		{"uk gov oc4", "ocid1.bastion.oc4.uk-gov-london-1.test", "oc4"},
+		{"dedicated oc8", "ocid1.bastion.oc8.ap-chiyoda-1.test", "oc8"},
+		{"short ocid", "ocid1.bastion", "oc1"}, // Defaults
+		{"very short", "ocid1", "oc1"},         // Defaults
+		{"empty", "", "oc1"},                   // Defaults
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			realm := extractRealmFromOCID(tt.ocid)
+			if realm != tt.wantRealm {
+				t.Errorf("extractRealmFromOCID(%q) = %q, want %q", tt.ocid, realm, tt.wantRealm)
+			}
+		})
+	}
+}
+
+func TestGetDomainFromRealm(t *testing.T) {
+	tests := []struct {
+		realm      string
+		wantDomain string
+	}{
+		{"oc1", "oraclecloud"},
+		{"oc2", "oraclegovcloud"},
+		{"oc3", "oraclegovcloud"},
+		{"oc4", "oraclegovcloud"},
+		{"oc5", "oraclegovcloud"},
+		{"oc8", "oraclegovcloud"},
+		{"oc9", "oraclegovcloud"},
+		{"oc10", "oraclegovcloud"},
+		{"oc19", "oraclegovcloud"},
+		{"oc20", "oraclegovcloud"},
+		{"unknown", "oraclegovcloud"}, // Non-oc1 defaults to gov
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.realm, func(t *testing.T) {
+			domain := getDomainFromRealm(tt.realm)
+			if domain != tt.wantDomain {
+				t.Errorf("getDomainFromRealm(%q) = %q, want %q", tt.realm, domain, tt.wantDomain)
+			}
+		})
+	}
+}
+
 func TestGetBastionHostAddress(t *testing.T) {
 	tests := []struct {
 		bastionID string

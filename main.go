@@ -54,7 +54,7 @@ func createTunatapDirectory() string {
 	// Check if the directory exists
 	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
 		// Directory does not exist, create it
-		err = os.Mkdir(dirPath, 0755)
+		err = os.Mkdir(dirPath, 0700)
 		if err != nil {
 			log.Fatal().Msgf("Failed to create directory %s: %v", dirPath, err)
 		}

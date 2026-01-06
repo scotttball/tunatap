@@ -15,16 +15,15 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-var (
-	maxRetries         = 30
-	sleepTimeInSeconds = 10
-)
-
-// incrementalSleep sleeps with exponential backoff.
-func incrementalSleep(retry int) {
-	sleepDuration := time.Duration(sleepTimeInSeconds*(maxRetries-retry+1)) * time.Second
-	log.Info().Msgf("Waiting for %s", sleepDuration.String())
-	time.Sleep(sleepDuration)
+// bastionBackoffConfig returns the backoff configuration for bastion retries.
+func bastionBackoffConfig() *utils.BackoffConfig {
+	return &utils.BackoffConfig{
+		InitialInterval: 5 * time.Second,
+		MaxInterval:     2 * time.Minute,
+		Multiplier:      1.5,
+		JitterFactor:    0.3,
+		MaxAttempts:     15,
+	}
 }
 
 // ReadyCallback is called when the tunnel is ready with the actual port.
@@ -37,7 +36,7 @@ func TunnelThroughBastion(ctx context.Context, ociClient *client.OCIClient, cfg 
 
 // TunnelThroughBastionWithCallback establishes an SSH tunnel and calls the callback when ready.
 func TunnelThroughBastionWithCallback(ctx context.Context, ociClient *client.OCIClient, cfg *config.Config, cluster *config.Cluster, endpoint *config.ClusterEndpoint, onReady ReadyCallback) error {
-	retry := maxRetries
+	backoff := utils.NewBackoff(bastionBackoffConfig())
 
 	// Default bastion type to STANDARD if not set
 	bastionType := "STANDARD"
@@ -45,31 +44,47 @@ func TunnelThroughBastionWithCallback(ctx context.Context, ociClient *client.OCI
 		bastionType = *cluster.BastionType
 	}
 
-	for retry > 0 {
-		log.Debug().Msgf("Retries left: %d", retry)
+	for {
+		log.Debug().Msgf("Connection attempt %d", backoff.Attempt()+1)
 
+		var err error
 		if bastionType == "INTERNAL" {
-			err := handleInternalBastionWithCallback(ctx, cluster, endpoint, onReady)
-			if err != nil {
-				log.Error().Err(err).Msg("Internal bastion tunnel failed")
-				retry--
-				incrementalSleep(retry)
-				continue
-			}
+			err = handleInternalBastionWithCallback(ctx, cluster, endpoint, onReady)
+		} else {
+			err = handleStandardBastionWithCallback(ctx, ociClient, cfg, cluster, endpoint, onReady)
+		}
+
+		if err == nil {
 			return nil
 		}
 
-		err := handleStandardBastionWithCallback(ctx, ociClient, cfg, cluster, endpoint, onReady)
-		if err != nil {
-			log.Error().Err(err).Msg("Standard bastion tunnel failed")
-			retry--
-			incrementalSleep(retry)
-			continue
-		}
-		return nil
-	}
+		log.Error().Err(err).Msgf("%s bastion tunnel failed", bastionType)
 
-	return fmt.Errorf("too many failed attempts, giving up")
+		// Check for context cancellation before sleeping
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		// Get next backoff duration
+		duration, shouldRetry := backoff.Next()
+		if !shouldRetry {
+			return fmt.Errorf("max retry attempts (%d) exceeded: %w", backoff.Attempt(), err)
+		}
+
+		log.Info().Msgf("Retrying in %s (attempt %d/%d)",
+			duration.Round(time.Millisecond),
+			backoff.Attempt(),
+			bastionBackoffConfig().MaxAttempts)
+
+		// Sleep with context awareness
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(duration):
+		}
+	}
 }
 
 // handleInternalBastionWithCallback handles tunneling through an internal bastion with a ready callback.
@@ -113,7 +128,7 @@ func handleStandardBastionWithCallback(ctx context.Context, ociClient *client.OC
 	var sshConfig ssh.ClientConfig
 
 	log.Info().Msg("Getting bastion session...")
-	err := UpdateBastionConnection(&sessionID, &sshConfig, ociClient, cfg, cluster, endpoint)
+	err := UpdateBastionConnection(ctx, &sessionID, &sshConfig, ociClient, cfg, cluster, endpoint)
 	if err != nil {
 		return fmt.Errorf("failed to get session from Bastion: %w", err)
 	}
@@ -143,7 +158,7 @@ func handleStandardBastionWithCallback(ctx context.Context, ociClient *client.OC
 				return
 			case <-ticker.C:
 				log.Debug().Msg("Periodic update check of bastion session...")
-				if err := UpdateBastionConnection(&sessionID, &sshConfig, ociClient, cfg, cluster, endpoint); err != nil {
+				if err := UpdateBastionConnection(ctx, &sessionID, &sshConfig, ociClient, cfg, cluster, endpoint); err != nil {
 					log.Error().Err(err).Msg("Failed to update bastion connection")
 				}
 			}

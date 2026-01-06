@@ -390,23 +390,25 @@ When configured, tunatap exposes HTTP endpoints for monitoring:
 health_endpoint: "localhost:9090"
 ```
 
+**Security:** The health endpoint is restricted to localhost by default. Non-localhost addresses are automatically rewritten to `127.0.0.1` to prevent accidental network exposure. Sensitive data (session IDs, internal IPs) is redacted from responses.
+
 Available endpoints:
 
 | Endpoint | Description |
 |----------|-------------|
-| `/health` | JSON status of all tunnels with details |
+| `/health` | JSON status of tunnels (sensitive data redacted) |
 | `/healthz` | Simple `ok` for Kubernetes liveness probes |
 | `/readyz` | Returns `ok` when healthy tunnels exist (readiness) |
-| `/metrics` | Prometheus-format metrics |
+| `/metrics` | Prometheus-format metrics (no infrastructure names) |
 
 Example metrics:
 ```
 tunatap_up 1
 tunatap_uptime_seconds 3600
 tunatap_tunnels_total 2
-tunatap_tunnel_healthy{cluster="prod",local_port="6443"} 1
-tunatap_pool_size{cluster="prod",local_port="6443"} 5
-tunatap_pool_active_uses{cluster="prod",local_port="6443"} 2
+tunatap_tunnel_healthy{tunnel="0",local_port="6443"} 1
+tunatap_pool_size{tunnel="0",local_port="6443"} 5
+tunatap_pool_active_uses{tunnel="0",local_port="6443"} 2
 ```
 
 ## Troubleshooting

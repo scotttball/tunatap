@@ -63,7 +63,13 @@ func TestIntegration_TunnelWithEphemeralSSH(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- tunnel.Start(ctx)
+		errCh <- tunnel.Start()
+	}()
+
+	// Cancel tunnel when context times out
+	go func() {
+		<-ctx.Done()
+		tunnel.Stop()
 	}()
 
 	// Wait for tunnel to be ready
@@ -146,7 +152,13 @@ func TestIntegration_TunnelConcurrentConnections(t *testing.T) {
 	defer cancel()
 
 	go func() {
-		_ = tunnel.Start(ctx)
+		_ = tunnel.Start()
+	}()
+
+	// Cancel tunnel when context times out
+	go func() {
+		<-ctx.Done()
+		tunnel.Stop()
 	}()
 
 	<-tunnel.Ready

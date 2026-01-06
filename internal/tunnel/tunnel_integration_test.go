@@ -4,6 +4,7 @@ package tunnel
 
 import (
 	"context"
+	"crypto/ed25519"
 	"fmt"
 	"io"
 	"net"
@@ -361,19 +362,15 @@ func (s *mockSSHServer) Close() error {
 }
 
 func generateTestKey() (ssh.Signer, error) {
-	// Use a hardcoded test key for reproducibility
-	// In production tests, generate or load from a file
-	testKey := `-----BEGIN OPENSSH PRIVATE KEY-----
-b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
-QyNTUxOQAAACBHK2VfZPBOQNbBa5fKGZLnT8TpYXYZhPIVFmvvMhPQhQAAAJBl8CtlZfAr
-ZQAAAAtzc2gtZWQyNTUxOQAAACBHK2VfZPBOQNbBa5fKGZLnT8TpYXYZhPIVFmvvMhPQhQ
-AAAEBLS5/KFLYd2T7l8kXOkPMXHNqxzxmqVk+sP/xqVCxxREcrZV9k8E5A1sFrl8oZkudP
-xOlhdhmE8hUWa+8yE9CFAAAADnRlc3RAZXhhbXBsZS5jb20BAgMEBQY=
------END OPENSSH PRIVATE KEY-----`
-
-	signer, err := ssh.ParsePrivateKey([]byte(testKey))
+	// Generate a fresh ED25519 key for testing
+	_, privateKey, err := ed25519.GenerateKey(nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to generate ed25519 key: %w", err)
+	}
+
+	signer, err := ssh.NewSignerFromKey(privateKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create signer: %w", err)
 	}
 	return signer, nil
 }

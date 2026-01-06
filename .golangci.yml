@@ -1,0 +1,120 @@
+# golangci-lint configuration for tunatap
+# Run with: golangci-lint run
+
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+
+output:
+  formats:
+    - format: colored-line-number
+  sort-results: true
+
+linters:
+  enable:
+    # Default linters
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+    # Security linters
+    - gosec          # Security vulnerabilities
+    - bodyclose      # HTTP response body close
+
+    # Bug detection
+    - nilerr         # Return nil error after checking error
+    - nilnil         # Return both nil error and nil value
+    - contextcheck   # Context propagation
+
+    # Code quality
+    - gocritic       # Code improvement suggestions
+    - gofmt          # Formatting
+    - goimports      # Import organization
+    - misspell       # Spelling errors
+    - unconvert      # Unnecessary type conversions
+    - unparam        # Unused function parameters
+    - wastedassign   # Wasted assignments
+
+    # Concurrency
+    - copyloopvar    # Loop variable capture (Go 1.22+)
+
+    # Style
+    - revive         # Replacement for golint
+    - whitespace     # Unnecessary whitespace
+
+linters-settings:
+  gosec:
+    excludes:
+      - G104  # Unhandled errors (too noisy for logging calls)
+      - G304  # File path from variable (needed for config files)
+    severity: medium
+    confidence: medium
+
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment  # Too strict for this project
+
+  revive:
+    rules:
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: dot-imports
+      - name: error-return
+      - name: error-strings
+      - name: error-naming
+      - name: exported
+      - name: increment-decrement
+      - name: indent-error-flow
+      - name: package-comments
+        disabled: true  # Not enforcing package comments
+      - name: range
+      - name: receiver-naming
+      - name: time-naming
+      - name: unexported-return
+      - name: var-declaration
+      - name: var-naming
+
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+      - style
+    disabled-checks:
+      - whyNoLint  # We don't require nolint justifications
+      - hugeParam  # Sometimes large params are needed
+
+  misspell:
+    locale: US
+
+  staticcheck:
+    checks:
+      - all
+      - -SA1019  # Deprecated (handle separately)
+
+issues:
+  exclude-use-default: false
+  exclude-rules:
+    # Ignore long lines in test files
+    - path: _test\.go
+      linters:
+        - gocritic
+        - govet
+
+    # Ignore certain checks in main.go
+    - path: main\.go
+      linters:
+        - gochecknoglobals
+
+    # Allow fmt.Printf in cmd files (CLI output)
+    - path: cmd/
+      linters:
+        - forbidigo
+
+  max-issues-per-linter: 50
+  max-same-issues: 10

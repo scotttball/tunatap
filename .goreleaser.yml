@@ -1,0 +1,118 @@
+# GoReleaser configuration for tunatap
+# Documentation: https://goreleaser.com
+
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go mod verify
+
+builds:
+  - id: tunatap
+    main: .
+    binary: tunatap
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.buildTime={{.Date}}
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    files:
+      - README.md
+      - LICENSE*
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^.*?fix(\(.+\))??!?:.+$'
+      order: 1
+    - title: Security
+      regexp: '^.*?sec(\(.+\))??!?:.+$'
+      order: 2
+    - title: Other
+      order: 999
+
+release:
+  github:
+    owner: scotttball
+    name: tunatap
+  draft: false
+  prerelease: auto
+  name_template: "{{.ProjectName}} v{{.Version}}"
+  header: |
+    ## Tunatap v{{.Version}}
+
+    SSH tunnel manager for OCI Bastion services.
+  footer: |
+    **Full Changelog**: https://github.com/scotttball/tunatap/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+brews:
+  - name: tunatap
+    repository:
+      owner: scotttball
+      name: homebrew-tap
+    directory: Formula
+    homepage: https://github.com/scotttball/tunatap
+    description: SSH tunnel manager for OCI Bastion services
+    license: MIT
+    skip_upload: auto
+    test: |
+      system "#{bin}/tunatap", "version"
+    install: |
+      bin.install "tunatap"
+
+# Optionally publish to Docker Hub
+# dockers:
+#   - image_templates:
+#       - "scotttball/tunatap:{{ .Tag }}"
+#       - "scotttball/tunatap:latest"
+#     dockerfile: Dockerfile
+#     build_flag_templates:
+#       - "--label=org.opencontainers.image.created={{.Date}}"
+#       - "--label=org.opencontainers.image.version={{.Version}}"

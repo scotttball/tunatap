@@ -1,0 +1,43 @@
+# Binaries
+tunatap
+tunatap-*
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, build with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+.coverage/
+
+# Go workspace
+go.work
+go.work.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+
+# Debug binaries
+*-debug
+
+# Profiling
+*.prof
+*.pprof
+
+# Local config (don't commit real configs)
+# config.yaml

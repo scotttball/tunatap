@@ -102,13 +102,13 @@ release:
 
     ### Installation
 
-    **Homebrew (macOS/Linux):**
+    **Go Install (requires Go 1.21+):**
     ```bash
-    brew install scotttball/tap/tunatap
+    go install github.com/scotttball/tunatap@latest
     ```
 
     **Direct Download:**
-    Download the appropriate binary for your platform from the assets below.
+    Download the appropriate archive for your platform from the assets below, extract, and add to your PATH.
   footer: |
     ---
     **Full Changelog**: https://github.com/scotttball/tunatap/compare/{{ .PreviousTag }}...{{ .Tag }}
@@ -117,28 +117,3 @@ release:
     ```bash
     sha256sum -c checksums.txt
     ```
-
-brews:
-  - name: tunatap
-    repository:
-      owner: scotttball
-      name: homebrew-tap
-    directory: Formula
-    homepage: https://github.com/scotttball/tunatap
-    description: SSH tunnel manager for OCI Bastion services
-    license: MIT
-    skip_upload: auto
-    test: |
-      system "#{bin}/tunatap", "version"
-    install: |
-      bin.install "tunatap"
-
-# Optionally publish to Docker Hub
-# dockers:
-#   - image_templates:
-#       - "scotttball/tunatap:{{ .Tag }}"
-#       - "scotttball/tunatap:latest"
-#     dockerfile: Dockerfile
-#     build_flag_templates:
-#       - "--label=org.opencontainers.image.created={{.Date}}"
-#       - "--label=org.opencontainers.image.version={{.Version}}"

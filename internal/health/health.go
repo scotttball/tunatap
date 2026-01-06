@@ -1,6 +1,7 @@
 package health
 
 import (
+	"net"
 	"sync"
 	"time"
 )
@@ -102,7 +103,8 @@ func (r *Registry) UpdatePoolStatus(id string, pool *PoolStatus) {
 	}
 }
 
-// GetStatus returns the overall health status.
+// GetStatus returns the overall health status with sensitive data redacted.
+// Session IDs and remote hosts are redacted for security.
 func (r *Registry) GetStatus() *HealthStatus {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -112,9 +114,22 @@ func (r *Registry) GetStatus() *HealthStatus {
 	allHealthy := true
 
 	for _, t := range r.tunnels {
-		// Update uptime
-		t.Uptime = time.Since(t.StartTime)
-		tunnels = append(tunnels, t)
+		// Create redacted copy
+		redacted := &TunnelStatus{
+			ID:         t.ID,
+			Cluster:    t.Cluster,
+			Region:     t.Region,
+			LocalPort:  t.LocalPort,
+			RemoteHost: redactHost(t.RemoteHost), // Redact internal IPs
+			RemotePort: t.RemotePort,
+			SessionID:  "", // Never expose session IDs
+			StartTime:  t.StartTime,
+			Uptime:     time.Since(t.StartTime),
+			Healthy:    t.Healthy,
+			LastError:  redactError(t.LastError), // Redact sensitive error details
+			Pool:       t.Pool,
+		}
+		tunnels = append(tunnels, redacted)
 		if !t.Healthy {
 			allHealthy = false
 		}
@@ -126,6 +141,38 @@ func (r *Registry) GetStatus() *HealthStatus {
 		UptimeStr: formatDuration(uptime),
 		Tunnels:   tunnels,
 	}
+}
+
+// redactHost masks internal IP addresses for security.
+// Only shows that it's an internal address without revealing the full IP.
+func redactHost(host string) string {
+	if host == "" {
+		return ""
+	}
+	// Check if it's an IP address
+	ip := net.ParseIP(host)
+	if ip == nil {
+		// Not an IP, might be a hostname - redact fully
+		return "[redacted]"
+	}
+	// Show network type only
+	if ip.IsPrivate() {
+		return "[private-network]"
+	}
+	if ip.IsLoopback() {
+		return "[localhost]"
+	}
+	return "[redacted]"
+}
+
+// redactError removes potentially sensitive details from error messages.
+func redactError(err string) string {
+	if err == "" {
+		return ""
+	}
+	// Just indicate there was an error without exposing details
+	// that might reveal internal infrastructure
+	return "connection error"
 }
 
 // GetTunnelStatus returns the status of a specific tunnel.

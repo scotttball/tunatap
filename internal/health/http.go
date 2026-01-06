@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -19,10 +20,50 @@ type Server struct {
 }
 
 // NewServer creates a new health server.
+// SECURITY: Only accepts localhost addresses by default.
+// Use NewServerUnsafe for non-localhost addresses (not recommended).
 func NewServer(addr string) *Server {
+	// Force localhost binding for security
+	addr = sanitizeBindAddress(addr)
 	return &Server{
 		addr:     addr,
 		registry: GetRegistry(),
+	}
+}
+
+// sanitizeBindAddress ensures the address only binds to localhost.
+// This prevents accidental exposure of health endpoints to the network.
+func sanitizeBindAddress(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		// If no port, assume it's just a port number
+		if _, err := net.LookupPort("tcp", addr); err == nil {
+			return "127.0.0.1:" + addr
+		}
+		// Default to localhost:9090
+		log.Warn().Str("addr", addr).Msg("Invalid health endpoint address, using 127.0.0.1:9090")
+		return "127.0.0.1:9090"
+	}
+
+	// Check if host is a safe localhost variant
+	if !isLocalhostAddress(host) {
+		log.Warn().
+			Str("original", addr).
+			Str("sanitized", "127.0.0.1:"+port).
+			Msg("Health endpoint bound to localhost only for security (use TUNATAP_ALLOW_REMOTE_HEALTH=1 to override)")
+		return "127.0.0.1:" + port
+	}
+
+	return addr
+}
+
+// isLocalhostAddress checks if the address is a localhost variant.
+func isLocalhostAddress(host string) bool {
+	switch strings.ToLower(host) {
+	case "", "localhost", "127.0.0.1", "::1", "[::1]":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -141,23 +182,23 @@ func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 	write("# TYPE tunatap_tunnels_total gauge\n")
 	write("tunatap_tunnels_total %d\n", len(status.Tunnels))
 
-	// Per-tunnel metrics
+	// Per-tunnel metrics (using index instead of cluster name to avoid leaking infra names)
 	write("# HELP tunatap_tunnel_healthy Whether a tunnel is healthy\n")
 	write("# TYPE tunatap_tunnel_healthy gauge\n")
-	for _, t := range status.Tunnels {
+	for i, t := range status.Tunnels {
 		healthy := 0
 		if t.Healthy {
 			healthy = 1
 		}
-		write("tunatap_tunnel_healthy{cluster=%q,local_port=\"%d\"} %d\n",
-			t.Cluster, t.LocalPort, healthy)
+		write("tunatap_tunnel_healthy{tunnel=\"%d\",local_port=\"%d\"} %d\n",
+			i, t.LocalPort, healthy)
 	}
 
 	write("# HELP tunatap_tunnel_uptime_seconds Tunnel uptime in seconds\n")
 	write("# TYPE tunatap_tunnel_uptime_seconds gauge\n")
-	for _, t := range status.Tunnels {
-		write("tunatap_tunnel_uptime_seconds{cluster=%q,local_port=\"%d\"} %.0f\n",
-			t.Cluster, t.LocalPort, t.Uptime.Seconds())
+	for i, t := range status.Tunnels {
+		write("tunatap_tunnel_uptime_seconds{tunnel=\"%d\",local_port=\"%d\"} %.0f\n",
+			i, t.LocalPort, t.Uptime.Seconds())
 	}
 
 	// Connection pool metrics if available
@@ -165,12 +206,12 @@ func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 	write("# TYPE tunatap_pool_size gauge\n")
 	write("# HELP tunatap_pool_active_uses Active pool connections in use\n")
 	write("# TYPE tunatap_pool_active_uses gauge\n")
-	for _, t := range status.Tunnels {
+	for i, t := range status.Tunnels {
 		if t.Pool != nil {
-			write("tunatap_pool_size{cluster=%q,local_port=\"%d\"} %d\n",
-				t.Cluster, t.LocalPort, t.Pool.Size)
-			write("tunatap_pool_active_uses{cluster=%q,local_port=\"%d\"} %d\n",
-				t.Cluster, t.LocalPort, t.Pool.ActiveUses)
+			write("tunatap_pool_size{tunnel=\"%d\",local_port=\"%d\"} %d\n",
+				i, t.LocalPort, t.Pool.Size)
+			write("tunatap_pool_active_uses{tunnel=\"%d\",local_port=\"%d\"} %d\n",
+				i, t.LocalPort, t.Pool.ActiveUses)
 		}
 	}
 }

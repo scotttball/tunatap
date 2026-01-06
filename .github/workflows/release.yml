@@ -21,6 +21,11 @@ on:
   push:
     branches: [main]
 
+# Only one release at a time
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 permissions:
   contents: write
   packages: write

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -31,8 +32,9 @@ func NewServer(addr string) *Server {
 	}
 }
 
-// sanitizeBindAddress ensures the address only binds to localhost.
+// sanitizeBindAddress ensures the address only binds to localhost unless explicitly allowed.
 // This prevents accidental exposure of health endpoints to the network.
+// Set TUNATAP_ALLOW_REMOTE_HEALTH=1 to allow non-localhost bindings.
 func sanitizeBindAddress(addr string) string {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -45,12 +47,20 @@ func sanitizeBindAddress(addr string) string {
 		return "127.0.0.1:9090"
 	}
 
+	// Check if remote binding is explicitly allowed
+	if os.Getenv("TUNATAP_ALLOW_REMOTE_HEALTH") == "1" {
+		log.Warn().
+			Str("addr", addr).
+			Msg("Health endpoint bound to non-localhost address (TUNATAP_ALLOW_REMOTE_HEALTH=1)")
+		return addr
+	}
+
 	// Check if host is a safe localhost variant
 	if !isLocalhostAddress(host) {
 		log.Warn().
 			Str("original", addr).
 			Str("sanitized", "127.0.0.1:"+port).
-			Msg("Health endpoint bound to localhost only for security (use TUNATAP_ALLOW_REMOTE_HEALTH=1 to override)")
+			Msg("Health endpoint bound to localhost only for security (set TUNATAP_ALLOW_REMOTE_HEALTH=1 to override)")
 		return "127.0.0.1:" + port
 	}
 

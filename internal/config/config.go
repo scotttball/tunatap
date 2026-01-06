@@ -58,6 +58,16 @@ type Config struct {
 	// DiscoveryRegions specifies which regions to search during discovery.
 	// If empty, all subscribed regions are searched.
 	DiscoveryRegions []string `yaml:"discovery_regions,omitempty"`
+
+	// Monitoring settings
+
+	// HealthEndpoint is the address for the health HTTP server (e.g., "localhost:9090").
+	// If set, enables health/metrics endpoints.
+	HealthEndpoint string `yaml:"health_endpoint,omitempty"`
+
+	// AuditLogging enables audit logging of tunnel connect/disconnect events.
+	// Default: true
+	AuditLogging *bool `yaml:"audit_logging,omitempty"`
 }
 
 // TenantInfo represents a tenancy configuration.
@@ -209,4 +219,12 @@ func (c *Config) GetCacheTTLHours() int {
 		return *c.CacheTTLHours
 	}
 	return 24 // Default 24 hours
+}
+
+// IsAuditLoggingEnabled returns whether audit logging is enabled (default: true).
+func (c *Config) IsAuditLoggingEnabled() bool {
+	if c.AuditLogging != nil {
+		return *c.AuditLogging
+	}
+	return true // Enabled by default
 }

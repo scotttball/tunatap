@@ -11,12 +11,15 @@ import (
 
 	"github.com/koki-develop/go-fzf"
 	"github.com/rs/zerolog/log"
+	"github.com/scotttball/tunatap/internal/audit"
 	"github.com/scotttball/tunatap/internal/bastion"
 	"github.com/scotttball/tunatap/internal/client"
 	"github.com/scotttball/tunatap/internal/cluster"
 	"github.com/scotttball/tunatap/internal/config"
 	"github.com/scotttball/tunatap/internal/discovery"
+	"github.com/scotttball/tunatap/internal/health"
 	"github.com/scotttball/tunatap/internal/preflight"
+	"github.com/scotttball/tunatap/internal/state"
 	"github.com/scotttball/tunatap/pkg/utils"
 	"github.com/spf13/cobra"
 )
@@ -202,9 +205,41 @@ func runConnect(cmd *cobra.Command, args []string) error {
 		cancel()
 	}()
 
+	// Start health server if configured
+	if cfg.HealthEndpoint != "" {
+		stopHealth, err := health.StartHealthServer(cfg.HealthEndpoint)
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to start health server")
+		} else {
+			defer stopHealth()
+		}
+	}
+
+	// Set up audit logging if enabled
+	var auditLogger *audit.Logger
+	if cfg.IsAuditLoggingEnabled() {
+		// Use configured home path from state, fall back to default
+		homePath := state.GetInstance().GetHomePath()
+		if homePath == "" {
+			homePath = utils.DefaultTunatapDir()
+		}
+		audit.SetHomePath(homePath)
+
+		var err error
+		auditLogger, err = audit.NewLogger(audit.DefaultLogDir())
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to create audit logger")
+		} else {
+			defer auditLogger.Close()
+		}
+	}
+
 	// Start the tunnel
 	if useBastion {
-		return bastion.TunnelThroughBastion(ctx, ociClient, cfg, selectedCluster, endpoint)
+		opts := &bastion.TunnelOptions{
+			AuditLogger: auditLogger,
+		}
+		return bastion.TunnelThroughBastionWithOptions(ctx, ociClient, cfg, selectedCluster, endpoint, opts)
 	}
 
 	// Direct connection without bastion (for future use)

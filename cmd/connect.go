@@ -25,15 +25,16 @@ import (
 )
 
 var (
-	clusterName      string
-	localPort        int
-	bastionName      string
-	endpointName     string
-	noBastion        bool
-	connectPreflight bool
-	skipPreflight    bool
-	regionHint       string
-	noCache          bool
+	clusterName       string
+	localPort         int
+	bastionName       string
+	endpointName      string
+	noBastion         bool
+	connectPreflight  bool
+	skipPreflight     bool
+	regionHint        string
+	noCache           bool
+	connectOCIProfile string
 )
 
 var connectCmd = &cobra.Command{
@@ -57,6 +58,7 @@ func init() {
 	connectCmd.Flags().BoolVar(&skipPreflight, "skip-preflight", false, "skip quick preflight validation")
 	connectCmd.Flags().StringVarP(&regionHint, "region", "r", "", "region hint for cluster discovery (optional)")
 	connectCmd.Flags().BoolVar(&noCache, "no-cache", false, "skip cache and force fresh discovery")
+	connectCmd.Flags().StringVar(&connectOCIProfile, "oci-profile", "", "OCI config profile to use (overrides config)")
 }
 
 func runConnect(cmd *cobra.Command, args []string) error {
@@ -76,6 +78,12 @@ func runConnect(cmd *cobra.Command, args []string) error {
 		if err := config.ConfigureGlobals(cfg); err != nil {
 			return fmt.Errorf("failed to configure globals: %w", err)
 		}
+	}
+
+	// Override OCI profile if specified via flag
+	if connectOCIProfile != "" {
+		cfg.OCIProfile = connectOCIProfile
+		log.Debug().Str("profile", connectOCIProfile).Msg("Using OCI profile from flag")
 	}
 
 	var selectedCluster *config.Cluster

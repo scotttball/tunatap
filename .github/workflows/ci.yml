@@ -13,7 +13,6 @@ concurrency:
 
 permissions:
   contents: read
-  security-events: write
 
 jobs:
   lint:
@@ -74,20 +73,20 @@ jobs:
 
       - name: Run gosec
         run: gosec -no-fail -fmt json -out gosec-results.json ./...
-        continue-on-error: true
 
       - name: Display security findings
-        if: always()
         run: |
-          if [ -f gosec-results.json ]; then
-            echo "### Security Scan Results" >> $GITHUB_STEP_SUMMARY
-            ISSUES=$(jq '.Issues | length' gosec-results.json 2>/dev/null || echo "0")
-            if [ "$ISSUES" = "0" ] || [ "$ISSUES" = "null" ]; then
-              echo "No security issues found." >> $GITHUB_STEP_SUMMARY
-            else
-              echo "Found $ISSUES potential security issues:" >> $GITHUB_STEP_SUMMARY
-              jq -r '.Issues[] | "- **\(.severity)**: \(.details) (\(.file):\(.line))"' gosec-results.json >> $GITHUB_STEP_SUMMARY 2>/dev/null || true
-            fi
+          if [ ! -f gosec-results.json ]; then
+            echo "::error::gosec failed to produce results file"
+            exit 1
+          fi
+          echo "### Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          ISSUES=$(jq '.Issues | length' gosec-results.json 2>/dev/null || echo "0")
+          if [ "$ISSUES" = "0" ] || [ "$ISSUES" = "null" ]; then
+            echo "No security issues found." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Found $ISSUES potential security issues:" >> $GITHUB_STEP_SUMMARY
+            jq -r '.Issues[] | "- **\(.severity)**: \(.details) (\(.file):\(.line))"' gosec-results.json >> $GITHUB_STEP_SUMMARY 2>/dev/null || true
           fi
 
   build:

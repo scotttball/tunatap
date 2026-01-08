@@ -97,11 +97,13 @@ func runConnect(cmd *cobra.Command, args []string) error {
 
 	// If not found in config, try discovery
 	if selectedCluster == nil && clusterName != "" {
-		log.Info().Msgf("Cluster '%s' not found in config, attempting discovery...", clusterName)
-
 		// Create OCI client with auto-detection for discovery
 		ociClient, err = createOCIClientForDiscovery(cfg)
 		if err != nil {
+			ociErr := client.ClassifyOCIError(err, "create OCI client")
+			if ociErr.Suggestion != "" {
+				return fmt.Errorf("failed to create OCI client: %s\n\n%s", ociErr.Message, ociErr.Suggestion)
+			}
 			return fmt.Errorf("failed to create OCI client: %w", err)
 		}
 
@@ -112,22 +114,73 @@ func runConnect(cmd *cobra.Command, args []string) error {
 			cache, _ = discovery.NewCache(utils.DefaultTunatapDir(), ttl)
 		}
 
-		// Perform discovery
 		discoverer := discovery.NewDiscoverer(ociClient, cache)
-		hints := &discovery.DiscoveryHints{Region: regionHint}
 
-		discovered, err := discoverer.DiscoverClusterWithHints(cmd.Context(), clusterName, hints)
-		if err != nil {
-			// Check if multiple clusters found - offer interactive selection
-			if errors.Is(err, discovery.ErrMultipleClustersFound) {
-				return err // The error message already contains all matches
+		var discovered *discovery.DiscoveredCluster
+
+		// Check if the input is an OCID - use direct lookup if so
+		if discovery.IsClusterOCID(clusterName) {
+			log.Info().Msgf("Detected cluster OCID, performing direct lookup...")
+			discovered, err = discoverer.DiscoverClusterByOCID(cmd.Context(), clusterName)
+			if err != nil {
+				// Error messages from DiscoverClusterByOCID are already well-formatted
+				return err
 			}
-			return fmt.Errorf("discovery failed: %w", err)
+		} else {
+			log.Info().Msgf("Cluster '%s' not found in config, attempting discovery...", clusterName)
+
+			// Perform name-based discovery
+			hints := &discovery.DiscoveryHints{Region: regionHint}
+			discovered, err = discoverer.DiscoverClusterWithHints(cmd.Context(), clusterName, hints)
+			if err != nil {
+				// Check if multiple clusters found - offer interactive selection
+				if errors.Is(err, discovery.ErrMultipleClustersFound) {
+					return err // The error message already contains all matches
+				}
+
+				// Provide better error messages for common failures
+				if errors.Is(err, discovery.ErrClusterNotFound) {
+					return fmt.Errorf("cluster '%s' not found\n\n"+
+						"To find available clusters, try:\n"+
+						"  tunatap list\n\n"+
+						"If the cluster exists, you may need to:\n"+
+						"  - Check that you have IAM policies to list clusters\n"+
+						"  - Specify the region with --region if searching is slow\n"+
+						"  - Use the cluster OCID directly instead of the name", clusterName)
+				}
+
+				if errors.Is(err, discovery.ErrClusterAccessDenied) {
+					return err // Already has good suggestion
+				}
+
+				// Check for auth errors
+				ociErr := client.ClassifyOCIError(err, "cluster discovery")
+				if ociErr.Type == client.ErrorTypeNotAuthenticated {
+					return fmt.Errorf("authentication failed during discovery\n\n%s", ociErr.Suggestion)
+				}
+
+				return fmt.Errorf("discovery failed: %w", err)
+			}
 		}
 
 		// Discover bastion
 		bastionInfo, err := discoverer.DiscoverBastion(cmd.Context(), discovered)
 		if err != nil {
+			if errors.Is(err, discovery.ErrNoBastionFound) {
+				return fmt.Errorf("no bastion found for cluster '%s'\n\n"+
+					"A bastion is required to connect to private OKE clusters.\n"+
+					"Please ensure:\n"+
+					"  1. A bastion exists in the cluster's compartment\n"+
+					"  2. The bastion is in ACTIVE state\n"+
+					"  3. You have IAM policies to read bastions\n\n"+
+					"To create a bastion, visit the OCI Console:\n"+
+					"  https://cloud.oracle.com/bastion", discovered.Name)
+			}
+
+			ociErr := client.ClassifyOCIError(err, "bastion discovery")
+			if ociErr.Suggestion != "" {
+				return fmt.Errorf("failed to discover bastion: %s\n\n%s", ociErr.Message, ociErr.Suggestion)
+			}
 			return fmt.Errorf("failed to discover bastion: %w", err)
 		}
 

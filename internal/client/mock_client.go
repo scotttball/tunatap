@@ -38,6 +38,12 @@ type MockOCIClient struct {
 	ShouldFailSession  bool
 	ShouldFailCluster  bool
 
+	// Specific error simulation for testing
+	ClusterError          error // Custom error to return from cluster operations
+	BastionError          error // Custom error to return from bastion operations
+	CompartmentError      error // Custom error to return from compartment operations
+	RegionError           error // Custom error to return from region operations
+
 	// Call tracking for assertions
 	Calls []MockCall
 }
@@ -165,6 +171,9 @@ func (m *MockOCIClient) FetchClusterID(ctx context.Context, compartmentID, clust
 // GetCluster retrieves cluster details.
 func (m *MockOCIClient) GetCluster(ctx context.Context, clusterID string) (*containerengine.Cluster, error) {
 	m.recordCall("GetCluster", clusterID)
+	if m.ClusterError != nil {
+		return nil, m.ClusterError
+	}
 	if m.ShouldFailCluster {
 		return nil, fmt.Errorf("mock cluster retrieval failure")
 	}
@@ -180,6 +189,9 @@ func (m *MockOCIClient) GetCluster(ctx context.Context, clusterID string) (*cont
 // ListBastions lists mock bastions.
 func (m *MockOCIClient) ListBastions(ctx context.Context, compartmentID string) ([]bastion.BastionSummary, error) {
 	m.recordCall("ListBastions", compartmentID)
+	if m.BastionError != nil {
+		return nil, m.BastionError
+	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -379,6 +391,9 @@ func (m *MockOCIClient) ListClustersInCompartment(ctx context.Context, compartme
 // GetSubscribedRegions returns mock subscribed regions.
 func (m *MockOCIClient) GetSubscribedRegions(ctx context.Context, tenancyID string) ([]identity.RegionSubscription, error) {
 	m.recordCall("GetSubscribedRegions", tenancyID)
+	if m.RegionError != nil {
+		return nil, m.RegionError
+	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.SubscribedRegions, nil

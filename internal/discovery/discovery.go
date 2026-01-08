@@ -11,6 +11,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/scotttball/tunatap/internal/client"
 	"github.com/scotttball/tunatap/internal/config"
+	"github.com/scotttball/tunatap/pkg/utils"
 )
 
 var (
@@ -25,6 +26,12 @@ var (
 
 	// ErrDiscoveryTimeout is returned when discovery times out.
 	ErrDiscoveryTimeout = errors.New("discovery timed out")
+
+	// ErrClusterAccessDenied is returned when the user lacks permission to access the cluster.
+	ErrClusterAccessDenied = errors.New("cluster access denied")
+
+	// ErrInvalidOCID is returned when an OCID format is invalid.
+	ErrInvalidOCID = errors.New("invalid OCID format")
 )
 
 // DiscoveredCluster contains information about a discovered cluster.
@@ -72,6 +79,103 @@ func NewDiscoverer(ociClient client.OCIClientInterface, cache *Cache) *Discovere
 // DiscoverCluster finds a cluster by name across all compartments and regions.
 func (d *Discoverer) DiscoverCluster(ctx context.Context, clusterName string) (*DiscoveredCluster, error) {
 	return d.DiscoverClusterWithHints(ctx, clusterName, nil)
+}
+
+// DiscoverClusterByOCID looks up a cluster directly by its OCID.
+// This is more efficient than name-based discovery and should be used when the OCID is known.
+func (d *Discoverer) DiscoverClusterByOCID(ctx context.Context, clusterOCID string) (*DiscoveredCluster, error) {
+	// Validate OCID format
+	ocidParts := utils.ParseOCID(clusterOCID)
+	if ocidParts == nil {
+		return nil, fmt.Errorf("%w: '%s' is not a valid OCID", ErrInvalidOCID, clusterOCID)
+	}
+
+	if ocidParts.ResourceType != "cluster" {
+		return nil, fmt.Errorf("%w: expected cluster OCID but got '%s' OCID", ErrInvalidOCID, ocidParts.ResourceType)
+	}
+
+	// Extract region from OCID
+	region := ocidParts.Region
+	if region == "" {
+		return nil, fmt.Errorf("%w: could not extract region from OCID", ErrInvalidOCID)
+	}
+
+	log.Info().Msgf("Looking up cluster by OCID in region %s...", region)
+
+	// Set region and fetch cluster directly
+	d.ociClient.SetRegion(region)
+
+	fullCluster, err := d.ociClient.GetCluster(ctx, clusterOCID)
+	if err != nil {
+		// Classify the error to provide better messaging
+		ociErr := client.ClassifyOCIError(err, "get cluster by OCID")
+
+		switch ociErr.Type {
+		case client.ErrorTypeNotAuthorizedOrNotFound:
+			return nil, fmt.Errorf("%w: cluster OCID '%s' not accessible\n\n%s",
+				ErrClusterAccessDenied, clusterOCID, ociErr.Suggestion)
+		case client.ErrorTypeNotAuthenticated:
+			return nil, fmt.Errorf("authentication failed when accessing cluster\n\n%s", ociErr.Suggestion)
+		case client.ErrorTypeNotAuthorized:
+			return nil, fmt.Errorf("%w: insufficient permissions to access cluster '%s'\n\n%s",
+				ErrClusterAccessDenied, clusterOCID, ociErr.Suggestion)
+		case client.ErrorTypeNotFound:
+			return nil, fmt.Errorf("%w: cluster '%s' does not exist in region %s\n\n%s",
+				ErrClusterNotFound, clusterOCID, region, ociErr.Suggestion)
+		default:
+			return nil, fmt.Errorf("failed to get cluster: %w", err)
+		}
+	}
+
+	// Build discovered cluster from response
+	cluster := &DiscoveredCluster{
+		OCID:   clusterOCID,
+		Region: region,
+	}
+
+	if fullCluster.Name != nil {
+		cluster.Name = *fullCluster.Name
+	}
+
+	if fullCluster.CompartmentId != nil {
+		cluster.CompartmentID = *fullCluster.CompartmentId
+	}
+
+	if fullCluster.VcnId != nil {
+		cluster.VcnID = *fullCluster.VcnId
+	}
+
+	if fullCluster.EndpointConfig != nil && fullCluster.EndpointConfig.SubnetId != nil {
+		cluster.SubnetID = *fullCluster.EndpointConfig.SubnetId
+	}
+
+	if fullCluster.Endpoints != nil && fullCluster.Endpoints.PrivateEndpoint != nil {
+		cluster.EndpointIP, cluster.EndpointPort = parseEndpoint(*fullCluster.Endpoints.PrivateEndpoint)
+	}
+
+	// Cache the result using the cluster name as key
+	if d.cache != nil && cluster.Name != "" {
+		if err := d.cache.SetCluster(cluster.Name, &CacheEntry{
+			OCID:            cluster.OCID,
+			Region:          cluster.Region,
+			CompartmentOCID: cluster.CompartmentID,
+			VcnID:           cluster.VcnID,
+			SubnetID:        cluster.SubnetID,
+			EndpointIP:      cluster.EndpointIP,
+			EndpointPort:    cluster.EndpointPort,
+		}); err != nil {
+			log.Warn().Err(err).Msg("Failed to cache cluster info")
+		}
+	}
+
+	log.Info().Msgf("Found cluster '%s' in region %s", cluster.Name, cluster.Region)
+
+	return cluster, nil
+}
+
+// IsClusterOCID returns true if the input looks like a cluster OCID.
+func IsClusterOCID(input string) bool {
+	return utils.IsClusterOCID(input)
 }
 
 // DiscoverClusterWithHints finds a cluster using optional hints to speed up discovery.

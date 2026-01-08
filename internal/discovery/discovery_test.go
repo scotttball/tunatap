@@ -83,9 +83,9 @@ func TestDiscoverClusterByOCID_InvalidOCIDFormat(t *testing.T) {
 	discoverer := NewDiscoverer(mock, nil)
 
 	tests := []struct {
-		name     string
-		ocid     string
-		wantErr  error
+		name    string
+		ocid    string
+		wantErr error
 	}{
 		{
 			name:    "empty string",

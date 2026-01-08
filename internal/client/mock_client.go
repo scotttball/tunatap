@@ -39,10 +39,10 @@ type MockOCIClient struct {
 	ShouldFailCluster  bool
 
 	// Specific error simulation for testing
-	ClusterError          error // Custom error to return from cluster operations
-	BastionError          error // Custom error to return from bastion operations
-	CompartmentError      error // Custom error to return from compartment operations
-	RegionError           error // Custom error to return from region operations
+	ClusterError     error // Custom error to return from cluster operations
+	BastionError     error // Custom error to return from bastion operations
+	CompartmentError error // Custom error to return from compartment operations
+	RegionError      error // Custom error to return from region operations
 
 	// Call tracking for assertions
 	Calls []MockCall

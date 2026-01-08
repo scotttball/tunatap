@@ -15,11 +15,11 @@ type mockServiceError struct {
 	message    string
 }
 
-func (e *mockServiceError) GetHTTPStatusCode() int { return e.statusCode }
-func (e *mockServiceError) GetMessage() string     { return e.message }
-func (e *mockServiceError) GetCode() string        { return e.code }
+func (e *mockServiceError) GetHTTPStatusCode() int  { return e.statusCode }
+func (e *mockServiceError) GetMessage() string      { return e.message }
+func (e *mockServiceError) GetCode() string         { return e.code }
 func (e *mockServiceError) GetOpcRequestID() string { return "test-request-id" }
-func (e *mockServiceError) Error() string          { return e.message }
+func (e *mockServiceError) Error() string           { return e.message }
 
 var _ common.ServiceError = (*mockServiceError)(nil)
 

@@ -69,16 +69,26 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Run gosec
-        uses: securego/gosec@v2.22.4
-        with:
-          args: '-no-fail -fmt sarif -out gosec.sarif ./...'
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.22.4
 
-      - name: Upload SARIF file
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: gosec.sarif
+      - name: Run gosec
+        run: gosec -no-fail -fmt json -out gosec-results.json ./...
+        continue-on-error: true
+
+      - name: Display security findings
         if: always()
+        run: |
+          if [ -f gosec-results.json ]; then
+            echo "### Security Scan Results" >> $GITHUB_STEP_SUMMARY
+            ISSUES=$(jq '.Issues | length' gosec-results.json 2>/dev/null || echo "0")
+            if [ "$ISSUES" = "0" ] || [ "$ISSUES" = "null" ]; then
+              echo "No security issues found." >> $GITHUB_STEP_SUMMARY
+            else
+              echo "Found $ISSUES potential security issues:" >> $GITHUB_STEP_SUMMARY
+              jq -r '.Issues[] | "- **\(.severity)**: \(.details) (\(.file):\(.line))"' gosec-results.json >> $GITHUB_STEP_SUMMARY 2>/dev/null || true
+            fi
+          fi
 
   build:
     name: Build

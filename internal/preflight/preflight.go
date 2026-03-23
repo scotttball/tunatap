@@ -406,7 +406,7 @@ func CheckClusterEndpointReachable(ctx context.Context, opts *CheckOptions) Chec
 	}
 
 	endpoint := opts.Cluster.Endpoints[0]
-	address := fmt.Sprintf("%s:%d", endpoint.Ip, endpoint.Port)
+	address := net.JoinHostPort(endpoint.Ip, fmt.Sprintf("%d", endpoint.Port))
 
 	// Note: This will typically fail since the cluster endpoint is private
 	// This check is mainly informational

@@ -33,7 +33,21 @@ jobs:
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: Run govulncheck
-        run: govulncheck -format sarif ./... > govulncheck.sarif 2>&1 || true
+        run: |
+          govulncheck -format sarif ./... > govulncheck-raw.sarif 2>&1 || true
+          # Deduplicate tags in SARIF rules to satisfy GitHub's strict schema validation
+          python3 -c "
+          import json
+          with open('govulncheck-raw.sarif') as f:
+              data = json.load(f)
+          for run in data.get('runs', []):
+              for rule in run.get('tool', {}).get('driver', {}).get('rules', []):
+                  tags = rule.get('properties', {}).get('tags', [])
+                  if tags:
+                      rule['properties']['tags'] = list(dict.fromkeys(tags))
+          with open('govulncheck.sarif', 'w') as f:
+              json.dump(data, f)
+          " 2>/dev/null || cp govulncheck-raw.sarif govulncheck.sarif
 
       - name: Display results
         run: |

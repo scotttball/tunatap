@@ -28,7 +28,7 @@ jobs:
           cache: true
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
           version: v1.64.8
           args: --timeout=5m
@@ -122,7 +122,7 @@ jobs:
           go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${{ github.sha }}" -o tunatap-${{ matrix.goos }}-${{ matrix.goarch }}${EXT} .
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: tunatap-${{ matrix.goos }}-${{ matrix.goarch }}
           path: tunatap-*
